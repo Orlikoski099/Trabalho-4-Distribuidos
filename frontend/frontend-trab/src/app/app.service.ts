@@ -50,4 +50,15 @@ export class AppService {
       }
     );
   }
+
+  payItem(item: Products) {
+    const headers = this.headers;
+    const payload = { 
+        "cliente_id": 1 ,
+        "produto_id": item.id ,
+        "quantidade": item.quantity,
+     };
+
+    return this.http.post(`${this.apiUrl}/pedidos`, payload, { headers });
+  }
 }

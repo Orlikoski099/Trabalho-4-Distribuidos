@@ -20,7 +20,7 @@ app.add_middleware(
 )
 
 # Configurações do RabbitMQ
-RABBITMQ_HOST = 'rabbitmq'  # Nome do serviço RabbitMQ no Docker Compose
+RABBITMQ_HOST = 'rabbitmq' 
 QUEUE_PEDIDOS_CRIADOS = 'Pedidos_Criados'
 QUEUE_PEDIDOS_EXCLUIDOS = 'Pedidos_Excluídos'
 QUEUE_PAGAMENTOS_APROVADOS = 'Pagamentos_Aprovados'
@@ -34,6 +34,7 @@ ENTREGA_SERVICE_URL = 'http://entrega:8000'
 PAGAMENTO_SERVICE_URL = 'http://pagamento:8000'
 
 CARRINHO_FILE_PATH = "carrinho.json"
+PEDIDOS_FILE_PATH = 'pedidos.json'
 
 # Definindo o modelo de produto com base na interface Products
 class Produto(BaseModel):
@@ -43,34 +44,23 @@ class Produto(BaseModel):
     inStock: int
     quantity: int
 
-# Modelo Pydantic para Pedido
+# Modelo de Pedido
 class Pedido(BaseModel):
+    id: Optional[int]
+    cliente_id: int
     produto_id: int
     quantidade: int
-    cliente_id: int
-    status: Optional[str] = "Pendente"
+    status: Optional[str]  # 'pendente', 'aprovado', 'recusado'
 
-def enviar_evento(corpo, fila):
-    try:
-        connection = pika.BlockingConnection(pika.ConnectionParameters(host=RABBITMQ_HOST))
-        channel = connection.channel()
-
-        # Declarar a fila
-        channel.queue_declare(queue=fila, durable=True)
-
-        # Enviar mensagem
-        channel.basic_publish(
-            exchange='',
-            routing_key=fila,
-            body=json.dumps(corpo),
-            properties=pika.BasicProperties(
-                delivery_mode=2,  # Tornar a mensagem persistente
-            )
-        )
-
-        connection.close()
-    except Exception as e:
-        print(f"Erro ao enviar evento para o RabbitMQ: {e}")
+# Função para enviar eventos para o RabbitMQ
+def enviar_evento(evento: dict, queue_name: str):
+    connection = pika.BlockingConnection(pika.ConnectionParameters(RABBITMQ_HOST))
+    channel = connection.channel()
+    channel.queue_declare(queue=queue_name)
+    channel.basic_publish(exchange='',
+                          routing_key=queue_name,
+                          body=json.dumps(evento))
+    connection.close()
 
 def consumir_eventos():
     try:
@@ -137,6 +127,19 @@ def salvar_carrinho(carrinho):
     except Exception as e:
         print(f"Erro ao salvar o carrinho no arquivo {CARRINHO_FILE_PATH}: {e}")  # Log de erro ao salvar
 
+
+# Função para ler os pedidos do arquivo
+def ler_pedidos() -> List[dict]:
+    try:
+        with open('pedidos.json', 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return []
+
+# Função para salvar os pedidos no arquivo
+def salvar_pedidos(pedidos: List[dict]):
+    with open('pedidos.json', 'w') as f:
+        json.dump(pedidos, f, indent=4)
 
 @app.get("/")
 async def root():
@@ -223,21 +226,44 @@ async def remover_produto(produto_id: int):
     salvar_carrinho(carrinho)
     return {"mensagem": f"Produto {produto_id} removido do carrinho."}
 
+###################################################################
 
-# Rota para criar pedido
+# Rota para criar um pedido
 @app.post("/pedidos")
 async def criar_pedido(pedido: Pedido):
-    # Criar o pedido e publicar evento no RabbitMQ
-    enviar_evento(pedido.dict(), QUEUE_PEDIDOS_CRIADOS)
-    return {"mensagem": f"Pedido criado e evento enviado para o estoque"}
+    if pedido.quantidade <= 0:
+        raise HTTPException(status_code=400, detail="A quantidade do produto deve ser maior que zero.")
+    
+    pedidos = ler_pedidos()
 
-# Rota para excluir pedido
-@app.delete("/pedidos/{pedido_id}")
-async def excluir_pedido(pedido_id: int):
-    # Excluir o pedido e publicar evento no RabbitMQ
-    pedido = {"pedido_id": pedido_id}  # Exemplo de dado a ser enviado
-    enviar_evento(pedido, QUEUE_PEDIDOS_EXCLUIDOS)
-    return {"mensagem": f"Pedido {pedido_id} excluído e evento enviado"}
+    # Gerar um ID único para o pedido (baseado na quantidade de pedidos existentes)
+    novo_id = len(pedidos) + 1
+
+    # Criar o pedido com o ID gerado
+    pedido_criado = Pedido(
+        id=novo_id,
+        cliente_id=pedido.cliente_id,
+        produto_id=pedido.produto_id,
+        quantidade=pedido.quantidade,
+        status="pendente"  # Definindo status inicial como "pendente"
+    )
+
+    # Adicionar o novo pedido à lista de pedidos
+    pedidos.append(pedido_criado.dict())
+
+    # Salvar o pedido no arquivo
+    salvar_pedidos(pedidos)
+
+    # Publicar evento no RabbitMQ (simulado)
+    evento_pedido = {
+        "cliente_id": pedido.cliente_id,
+        "produto_id": pedido.produto_id,
+        "quantidade": pedido.quantidade,
+    }
+    enviar_evento(evento_pedido, "Pedidos_Criados")
+
+    # Retornar a resposta com a mensagem e o pedido criado
+    return {"mensagem": f"Pedido {novo_id} criado e evento enviado para o RabbitMQ.", "pedido": pedido_criado}
 
 # Função de inicialização para consumir eventos
 @app.on_event("startup")
