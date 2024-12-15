@@ -1,0 +1,73 @@
+version: "3.9"
+
+services:
+  principal:
+    build:
+      context: ./backend/principal
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    depends_on:
+      - rabbitmq
+    networks:
+      - proj4
+
+  estoque:
+    build:
+      context: ./backend/estoque
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8000"
+    depends_on:
+      - rabbitmq
+    networks:
+      - proj4
+
+  pagamento:
+    build:
+      context: ./backend/pagamento
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8000"
+    depends_on:
+      - rabbitmq
+    networks:
+      - proj4
+
+  entrega:
+    build:
+      context: ./backend/entrega
+      dockerfile: Dockerfile
+    ports:
+      - "8003:8000"
+    depends_on:
+      - rabbitmq
+    networks:
+      - proj4
+
+  notificacao:
+    build:
+      context: ./backend/notificacao
+      dockerfile: Dockerfile
+    ports:
+      - "8004:8000"
+    depends_on:
+      - rabbitmq
+    networks:
+      - proj4
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672" # Porta para comunicação AMQP
+      - "15672:15672" # Porta para interface web de gerenciamento
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin
+    restart: always
+    networks:
+      - proj4
+
+networks:
+  proj4:
+    driver: bridge

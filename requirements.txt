@@ -1,6 +1,0 @@
-# Arquivo requirements.txt para o projeto backend
-fastapi==0.100.0  # Framework web leve e eficiente
-uvicorn==0.23.0   # Servidor ASGI para rodar a aplicação FastAPI
-pydantic==1.10.0  # Validação de dados e definição de modelos
-
-httpx==0.24.0        # Cliente HTTP para chamadas assíncronas externas

@@ -1,0 +1,4 @@
+fastapi   # Framework web leve e eficiente
+uvicorn   # Servidor ASGI para rodar a aplicação FastAPI
+pydantic  # Validação de dados e definição de modelos
+httpx pika     # Cliente HTTP para chamadas assíncronas externas
