@@ -147,6 +147,8 @@ async def excluir_pedido(pedido: Pedido):
     
     return {"message": "Pedido excluído com sucesso", "produto": produto}
 
+###################################################################
+
 # Endpoint para consultar o estoque
 @app.get("/estoque")
 async def consultar_estoque():

@@ -1,12 +1,23 @@
+import os
 import pika
 import json
 import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
+from fastapi.middleware.cors import CORSMiddleware
 
 # Instância principal do FastAPI
 app = FastAPI()
+
+# Configuração do CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Permite qualquer origem (CUIDADO EM PRODUÇÃO)
+    allow_credentials=True,
+    allow_methods=["*"],  # Permite todos os métodos HTTP
+    allow_headers=["*"],  # Permite todos os cabeçalhos
+)
 
 # Configurações do RabbitMQ
 RABBITMQ_HOST = 'rabbitmq'  # Nome do serviço RabbitMQ no Docker Compose
@@ -18,6 +29,19 @@ QUEUE_PEDIDOS_ENVIADOS = 'Pedidos_Enviados'
 
 
 ESTOQUE_SERVICE_URL = 'http://estoque:8000'
+NOTIFICACAO_SERVICE_URL = 'http://notificacao:8000'
+ENTREGA_SERVICE_URL = 'http://entrega:8000'
+PAGAMENTO_SERVICE_URL = 'http://pagamento:8000'
+
+CARRINHO_FILE_PATH = "carrinho.json"
+
+# Definindo o modelo de produto com base na interface Products
+class Produto(BaseModel):
+    id: int
+    name: str
+    originalStock: int
+    inStock: int
+    quantity: int
 
 # Modelo Pydantic para Pedido
 class Pedido(BaseModel):
@@ -84,7 +108,43 @@ def consumir_eventos():
     except Exception as e:
         print(f"Erro ao consumir eventos: {e}")
 
-# Rota para visualizar o carrinho de compras
+# Função para ler o carrinho
+def ler_carrinho():
+    if not os.path.exists(CARRINHO_FILE_PATH):
+        # Caso o arquivo não exista, cria um arquivo vazio
+        with open(CARRINHO_FILE_PATH, 'w') as file:
+            json.dump([], file)
+        print(f"Arquivo {CARRINHO_FILE_PATH} criado com carrinho vazio.")  # Log de criação do arquivo
+        return []  # Retorna uma lista vazia
+
+    with open(CARRINHO_FILE_PATH, 'r') as file:
+        try:
+            # Tenta carregar o conteúdo do arquivo JSON
+            carrinho = json.load(file)
+            print(f"Carrinho carregado: {carrinho}")  # Log para verificar o conteúdo carregado
+            return carrinho
+        except json.JSONDecodeError:
+            # Caso o arquivo esteja vazio ou com conteúdo inválido
+            print(f"Erro ao decodificar JSON no arquivo {CARRINHO_FILE_PATH}. Retornando carrinho vazio.")
+            return []  # Retorna uma lista vazia se o arquivo estiver vazio ou corrompido
+        
+# Função para salvar o conteúdo do carrinho
+def salvar_carrinho(carrinho):
+    try:
+        with open(CARRINHO_FILE_PATH, 'w') as file:
+            json.dump(carrinho, file, indent=4)
+            print(f"Carrinho salvo com sucesso em {CARRINHO_FILE_PATH}.")  # Log para confirmar a gravação
+    except Exception as e:
+        print(f"Erro ao salvar o carrinho no arquivo {CARRINHO_FILE_PATH}: {e}")  # Log de erro ao salvar
+
+
+@app.get("/")
+async def root():
+    return {"message": "CORS configurado para localhost"}
+
+###################################################################
+
+# Visualização de todos os produtos
 @app.get("/produtos")
 async def listar_produtos():
     try:
@@ -101,18 +161,68 @@ async def listar_produtos():
     
     except httpx.RequestError as e:
         raise HTTPException(status_code=500, detail=f"Erro de conexão com o serviço de estoque: {str(e)}")
+    
+###################################################################
 
-# Rota para adicionar produto ao carrinho
-@app.post("/carrinho")
-async def adicionar_ao_carrinho(pedido: Pedido):
-    # Implementar lógica de adicionar ao carrinho
-    return {"mensagem": f"Produto {pedido.produto_id} adicionado ao carrinho"}
+# Rota GET para obter todos os produtos do carrinho
+@app.get("/carrinho", response_model=List[Produto])
+async def listar_carrinho():
+    carrinho = ler_carrinho()
+    return carrinho
 
-# Rota para remover produto do carrinho
+# Rota POST para adicionar um produto ao carrinho
+@app.post("/carrinho", response_model=Produto)
+async def adicionar_ao_carrinho(produto: Produto):
+    carrinho = ler_carrinho()
+
+    # Verifica se o produto já está no carrinho
+    for item in carrinho:
+        if item["id"] == produto.id:
+            item["quantity"]
+            item["inStock"]
+            salvar_carrinho(carrinho)
+            return item
+    
+    # Se não estiver, adiciona o novo produto
+    carrinho.append({
+        "id": produto.id,
+        "name": produto.name,
+        "originalStock": produto.originalStock,
+        "inStock": produto.inStock - produto.quantity,  # Subtrai do estoque
+        "quantity": produto.quantity
+    })
+    salvar_carrinho(carrinho)
+    return carrinho[-1]
+
+# Rota PATCH para atualizar a quantidade de um produto no carrinho
+@app.patch("/carrinho/{produto_id}/{quantity}", response_model=Produto)
+async def atualizar_quantidade(produto_id: int, quantity: int):
+    carrinho = ler_carrinho()
+    
+    for item in carrinho:
+        if item["id"] == produto_id:
+            if quantity <= 0:
+                raise HTTPException(status_code=400, detail="Quantidade deve ser maior que zero.")
+            item["quantity"] = quantity
+            item["inStock"] = item["originalStock"] - item["quantity"]  # Atualiza o estoque disponível
+            salvar_carrinho(carrinho)
+            return item
+    
+    raise HTTPException(status_code=404, detail="Produto não encontrado no carrinho.")
+
+# Rota DELETE para remover um produto do carrinho
 @app.delete("/carrinho/{produto_id}")
-async def remover_do_carrinho(produto_id: int):
-    # Implementar lógica de remoção do carrinho
-    return {"mensagem": f"Produto {produto_id} removido do carrinho"}
+async def remover_produto(produto_id: int):
+    carrinho = ler_carrinho()
+    
+    carrinho = [item for item in carrinho if item["id"] != produto_id]
+    
+    if len(carrinho) == len(ler_carrinho()):
+        raise HTTPException(status_code=404, detail="Produto não encontrado no carrinho.")
+    
+    salvar_carrinho(carrinho)
+    return {"mensagem": f"Produto {produto_id} removido do carrinho."}
+
 
 # Rota para criar pedido
 @app.post("/pedidos")

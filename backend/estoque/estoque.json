@@ -1,19 +1,17 @@
-{
-  "produtos": [
-    {
-      "id": 1,
-      "nome": "Produto A",
-      "quantidade": 100
-    },
-    {
-      "id": 2,
-      "nome": "Produto B",
-      "quantidade": 50
-    },
-    {
-      "id": 3,
-      "nome": "Produto C",
-      "quantidade": 30
-    }
-  ]
-}
+[
+  {
+    "id": 1,
+    "name": "Produto A",
+    "inStock": 100
+  },
+  {
+    "id": 2,
+    "name": "Produto B",
+    "inStock": 50
+  },
+  {
+    "id": 3,
+    "name": "Produto C",
+    "inStock": 30
+  }
+]
