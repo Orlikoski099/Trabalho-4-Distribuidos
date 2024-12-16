@@ -27,9 +27,9 @@ CREDENTIALS = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASSWORD)
 
 QUEUE_PEDIDOS_CRIADOS = 'Pedidos_Criados'
 QUEUE_PEDIDOS_EXCLUIDOS = 'Pedidos_Excluídos'
+QUEUE_PEDIDOS_ENVIADOS = 'Pedidos_Enviados'
 QUEUE_PAGAMENTOS_APROVADOS = 'Pagamentos_Aprovados'
 QUEUE_PAGAMENTOS_RECUSADOS = 'Pagamentos_Recusados'
-QUEUE_PEDIDOS_ENVIADOS = 'Pedidos_Enviados'
 
 
 ESTOQUE_SERVICE_URL = 'http://estoque:8000'
