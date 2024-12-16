@@ -42,7 +42,6 @@ def enviar_evento(evento, routing_key):
 
 
 def callback(ch, method, properties, body):
-    print('aaaaaaaaaa')
     try:
         # Recebe os dados do pedido
         pedido = json.loads(body)

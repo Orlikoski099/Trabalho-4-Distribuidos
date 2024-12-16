@@ -85,7 +85,7 @@
                 Atualizar
               </button>
               <button
-                (click)="payItem(item)"
+                (click)="payItem(item, item.id)"
                 [disabled]="item.originalStock < item.quantity"
               >
                 Pagar

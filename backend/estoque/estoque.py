@@ -19,7 +19,6 @@ QUEUE_PAGAMENTOS_RECUSADOS = 'Pagamentos_Recusados'
 
 # Função para carregar o estoque do arquivo JSON
 
-
 def carregar_estoque():
     try:
         with open("estoque.json", "r") as file:
@@ -72,58 +71,64 @@ def enviar_evento(evento, queue):
     connection.close()
 
 # Callback para processar eventos de criação de pedidos
-
-
 def callback_pedido_criado(ch, method, properties, body):
     try:
+        # Decodifica o corpo da mensagem recebida
         pedido = json.loads(body)
         print(f"Pedido criado recebido: {pedido}")
 
-        # Carrega o estoque, que é um dicionário com a chave 'produtos'
+        # Carrega o estoque (já é uma lista no seu caso)
         estoque = carregar_estoque()
 
-        # Busca o produto no estoque pela chave 'id' e pelo 'produto' no pedido
-        produto = next(
-            (p for p in estoque['produtos'] if p['id'] == pedido['produto']), None)
+        # Busca o produto correspondente ao ID do pedido
+        produto = next((p for p in estoque if p['name'] == pedido['produto']), None)
 
         if not produto:
-            print("Erro: Produto não encontrado.")
+            print("Erro: Produto não encontrado no estoque.")
             return
 
         # Verifica se há quantidade suficiente no estoque
-        if produto['quantidade'] >= pedido['quantidade']:
-            produto['quantidade'] -= pedido['quantidade']
+        if produto['inStock'] >= pedido['quantidade']:
+            # Atualiza o estoque
+            produto['inStock'] -= pedido['quantidade']
             salvar_estoque(estoque)
             print(f"Estoque atualizado após pedido criado: {produto}")
         else:
             print("Erro: Quantidade insuficiente no estoque.")
     except json.JSONDecodeError:
         print("Erro ao decodificar a mensagem recebida.")
+    except Exception as e:
+        print(f"Erro no callback: {str(e)}")
+
 
 # Callback para processar eventos de exclusão de pedidos
-
-
 def callback_pedido_excluido(ch, method, properties, body):
     try:
+        # Decodifica o corpo da mensagem recebida
         pedido = json.loads(body)
         print(f"Pedido excluído recebido: {pedido}")
 
+        # Carrega o estoque (lista de produtos)
         estoque = carregar_estoque()
-        produto = next(
-            (p for p in estoque['produtos'] if p['id'] == pedido['produto']), None)
 
-        if produto:
-            produto['quantidade'] += pedido['quantidade']
-            salvar_estoque(estoque)
-            print(f"Estoque atualizado após pedido excluído: {produto}")
-        else:
-            print("Erro: Produto não encontrado.")
+        # Busca o produto correspondente ao ID do pedido
+        produto = next((p for p in estoque if p['id'] == pedido['produto']), None)
+
+        if not produto:
+            print("Erro: Produto não encontrado no estoque.")
+            return
+
+        # Atualiza o estoque (revertendo a quantidade do pedido excluído)
+        produto['inStock'] += pedido['quantidade']
+        salvar_estoque(estoque)
+
+        print(f"Estoque atualizado após pedido excluído: {produto}")
     except json.JSONDecodeError:
         print("Erro ao decodificar a mensagem recebida.")
-
+    except Exception as e:
+        print(f"Erro no callback: {str(e)}")
+        
 # Função para iniciar o consumidor de eventos
-
-
 def consumir_eventos():
     connection = pika.BlockingConnection(pika.ConnectionParameters(
         host=RABBITMQ_HOST, credentials=CREDENTIALS))

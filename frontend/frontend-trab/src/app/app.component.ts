@@ -113,12 +113,15 @@ export class AppComponent implements OnInit {
     }
   }
 
-  payItem(item: any) {
+  payItem(item: any, item_id: any) {
     this.appService.payItem(item).subscribe({
       next: () => {
         alert('Produto submetido a pagamento');
       },
-      complete: () => this.reloadProducts(),
+      complete: () => {
+        this.reloadProducts();
+        this.removeFromCart(item.id);
+      },
     });
   }
 }
