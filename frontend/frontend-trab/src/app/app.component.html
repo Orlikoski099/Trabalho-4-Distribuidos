@@ -85,7 +85,7 @@
                 Atualizar
               </button>
               <button
-                (click)="payItem(item)"
+                (click)="payItem(item, item.id)"
                 [disabled]="item.originalStock < item.quantity"
               >
                 Pagar
@@ -102,7 +102,27 @@
     <!-- Pedidos -->
     <div *ngIf="activeTab === 'orders'">
       <h2>Seus Pedidos</h2>
-      <p>Ainda não há pedidos realizados.</p>
+      <table *ngIf="orders.length > 0; else noOrders">
+        <thead>
+          <tr>
+            <th>Identificador</th>
+            <th>Produto</th>
+            <th>Quantidade</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let item of orders">
+            <td>{{ item.id }}</td>
+            <td>{{ item.produto }}</td>
+            <td>{{ item.quantidade }}</td>
+            <td>{{ item.status }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <ng-template #noOrders>
+        <p>Você ainda não tem pedidos realizados. {{ ":(" }}</p>
+      </ng-template>
     </div>
   </div>
 </div>

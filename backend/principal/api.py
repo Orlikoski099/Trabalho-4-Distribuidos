@@ -20,12 +20,16 @@ app.add_middleware(
 )
 
 # Configurações do RabbitMQ
-RABBITMQ_HOST = 'rabbitmq'  # Nome do serviço RabbitMQ no Docker Compose
+RABBITMQ_HOST = 'rabbitmq' 
+RABBITMQ_USER = "admin"
+RABBITMQ_PASSWORD = "admin"
+CREDENTIALS = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASSWORD)
+
 QUEUE_PEDIDOS_CRIADOS = 'Pedidos_Criados'
 QUEUE_PEDIDOS_EXCLUIDOS = 'Pedidos_Excluídos'
+QUEUE_PEDIDOS_ENVIADOS = 'Pedidos_Enviados'
 QUEUE_PAGAMENTOS_APROVADOS = 'Pagamentos_Aprovados'
 QUEUE_PAGAMENTOS_RECUSADOS = 'Pagamentos_Recusados'
-QUEUE_PEDIDOS_ENVIADOS = 'Pedidos_Enviados'
 
 
 ESTOQUE_SERVICE_URL = 'http://estoque:8000'
@@ -34,6 +38,7 @@ ENTREGA_SERVICE_URL = 'http://entrega:8000'
 PAGAMENTO_SERVICE_URL = 'http://pagamento:8000'
 
 CARRINHO_FILE_PATH = "carrinho.json"
+PEDIDOS_FILE_PATH = 'pedidos.json'
 
 # Definindo o modelo de produto com base na interface Products
 class Produto(BaseModel):
@@ -43,64 +48,72 @@ class Produto(BaseModel):
     inStock: int
     quantity: int
 
-# Modelo Pydantic para Pedido
+# Modelo de Pedido
 class Pedido(BaseModel):
-    produto_id: int
-    quantidade: int
+    id: Optional[int]
     cliente_id: int
-    status: Optional[str] = "Pendente"
+    produto: str
+    quantidade: int
+    status: Optional[str]  # 'pendente', 'aprovado', 'recusado'
 
-def enviar_evento(corpo, fila):
-    try:
-        connection = pika.BlockingConnection(pika.ConnectionParameters(host=RABBITMQ_HOST))
-        channel = connection.channel()
 
-        # Declarar a fila
-        channel.queue_declare(queue=fila, durable=True)
-
-        # Enviar mensagem
-        channel.basic_publish(
-            exchange='',
-            routing_key=fila,
-            body=json.dumps(corpo),
-            properties=pika.BasicProperties(
-                delivery_mode=2,  # Tornar a mensagem persistente
-            )
-        )
-
-        connection.close()
-    except Exception as e:
-        print(f"Erro ao enviar evento para o RabbitMQ: {e}")
+# Função para enviar eventos para o RabbitMQ
+def enviar_evento(evento: dict, routing_key: str):
+    connection = pika.BlockingConnection(pika.ConnectionParameters(host=RABBITMQ_HOST, credentials=CREDENTIALS))
+    channel = connection.channel()
+    
+    # Declarar a exchange, por exemplo, do tipo "topic"
+    channel.exchange_declare(exchange='default', exchange_type='topic')
+    
+    # Publicar a mensagem na exchange com a chave de roteamento
+    channel.basic_publish(exchange='default', routing_key=routing_key, body=json.dumps(evento))
+    
+    connection.close()
 
 def consumir_eventos():
     try:
         connection = pika.BlockingConnection(pika.ConnectionParameters(host=RABBITMQ_HOST))
         channel = connection.channel()
 
+        # Declarar a exchange que será usada
+        channel.exchange_declare(exchange='default', exchange_type='topic')
+        
         # Declarar as filas que o serviço irá consumir
-        channel.queue_declare(queue=QUEUE_PAGAMENTOS_APROVADOS, durable=True)
-        channel.queue_declare(queue=QUEUE_PAGAMENTOS_RECUSADOS, durable=True)
-        channel.queue_declare(queue=QUEUE_PEDIDOS_ENVIADOS, durable=True)
+        result_1 = channel.queue_declare(queue='', exclusive=True)
+        result_2 = channel.queue_declare(queue='', exclusive=True)
+        result_3 = channel.queue_declare(queue='', exclusive=True)
+
+        selected_1 = result_1.method.queue
+        selected_2 = result_2.method.queue
+        selected_3 = result_3.method.queue
+
+
+        # Vincular as filas à exchange com suas respectivas chaves de roteamento
+        channel.queue_bind(exchange='default', queue=selected_1, routing_key=QUEUE_PAGAMENTOS_APROVADOS)
+        channel.queue_bind(exchange='default', queue=selected_2, routing_key=QUEUE_PAGAMENTOS_RECUSADOS)
+        channel.queue_bind(exchange='default', queue=selected_3, routing_key=QUEUE_PEDIDOS_ENVIADOS)
 
         # Função de callback para processar os eventos
         def callback(ch, method, properties, body):
             evento = json.loads(body)
             if method.routing_key == QUEUE_PAGAMENTOS_APROVADOS:
                 print(f"Pagamento aprovado para pedido {evento['pedido_id']}")
-                # Atualizar status do pedido para "Aprovado"
             elif method.routing_key == QUEUE_PAGAMENTOS_RECUSADOS:
                 print(f"Pagamento recusado para pedido {evento['pedido_id']}")
-                # Atualizar status do pedido para "Recusado"
             elif method.routing_key == QUEUE_PEDIDOS_ENVIADOS:
                 print(f"Pedido {evento['pedido_id']} enviado")
-                # Atualizar status do pedido para "Enviado"
             
             ch.basic_ack(delivery_tag=method.delivery_tag)
 
         # Consumir os eventos
-        channel.basic_consume(queue=QUEUE_PAGAMENTOS_APROVADOS, on_message_callback=callback)
-        channel.basic_consume(queue=QUEUE_PAGAMENTOS_RECUSADOS, on_message_callback=callback)
-        channel.basic_consume(queue=QUEUE_PEDIDOS_ENVIADOS, on_message_callback=callback)
+        channel.basic_consume(
+            queue=selected_1, on_message_callback=callback, auto_ack=True)
+        # Consumir os eventos
+        channel.basic_consume(
+            queue=selected_2, on_message_callback=callback, auto_ack=True)
+        # Consumir os eventos
+        channel.basic_consume(
+            queue=selected_3, on_message_callback=callback, auto_ack=True)
 
         print("Esperando por eventos. Pressione Ctrl+C para sair.")
         channel.start_consuming()
@@ -137,6 +150,34 @@ def salvar_carrinho(carrinho):
     except Exception as e:
         print(f"Erro ao salvar o carrinho no arquivo {CARRINHO_FILE_PATH}: {e}")  # Log de erro ao salvar
 
+# Função para ler os pedidos do arquivo
+def ler_pedidos() -> List[dict]:
+    if not os.path.exists(PEDIDOS_FILE_PATH):
+        # Caso o arquivo não exista, cria um arquivo vazio
+        with open(PEDIDOS_FILE_PATH, 'w') as file:
+            json.dump([], file)
+        print(f"Arquivo {PEDIDOS_FILE_PATH} criado com pedidos vazios.")  # Log de criação do arquivo
+        return []  # Retorna uma lista vazia
+
+    with open(PEDIDOS_FILE_PATH, 'r') as file:
+        try:
+            # Tenta carregar o conteúdo do arquivo JSON
+            pedidos = json.load(file)
+            print(f"Pedidos carregados: {pedidos}")  # Log para verificar o conteúdo carregado
+            return pedidos
+        except json.JSONDecodeError:
+            # Caso o arquivo esteja vazio ou com conteúdo inválido
+            print(f"Erro ao decodificar JSON no arquivo {PEDIDOS_FILE_PATH}. Retornando pedidos vazios.")
+            return []  # Retorna uma lista vazia se o arquivo estiver vazio ou corrompido
+
+# Função para salvar os pedidos no arquivo
+def salvar_pedidos(pedidos: List[dict]):
+    try:
+        with open(PEDIDOS_FILE_PATH, 'w') as file:
+            json.dump(pedidos, file, indent=4)
+            print(f"Pedidos salvos com sucesso em {PEDIDOS_FILE_PATH}.")  # Log para confirmar a gravação
+    except Exception as e:
+        print(f"Erro ao salvar os pedidos no arquivo {PEDIDOS_FILE_PATH}: {e}")  # Log de erro ao salvar
 
 @app.get("/")
 async def root():
@@ -150,7 +191,6 @@ async def listar_produtos():
     try:
         # Fazendo uma requisição HTTP GET para o microserviço de estoque
         async with httpx.AsyncClient() as client:
-            print(f'{ESTOQUE_SERVICE_URL}/estoque')
             response = await client.get(f'{ESTOQUE_SERVICE_URL}/estoque')
         
         # Se a resposta do microserviço de estoque for bem-sucedida
@@ -223,21 +263,56 @@ async def remover_produto(produto_id: int):
     salvar_carrinho(carrinho)
     return {"mensagem": f"Produto {produto_id} removido do carrinho."}
 
+###################################################################
 
-# Rota para criar pedido
-@app.post("/pedidos")
+# Rota para criar um pedido
+@app.post("/pedidos", response_model=Pedido)
 async def criar_pedido(pedido: Pedido):
-    # Criar o pedido e publicar evento no RabbitMQ
-    enviar_evento(pedido.dict(), QUEUE_PEDIDOS_CRIADOS)
-    return {"mensagem": f"Pedido criado e evento enviado para o estoque"}
+    if pedido.quantidade <= 0:
+        raise HTTPException(status_code=400, detail="A quantidade do produto deve ser maior que zero.")
+    
+    pedidos = ler_pedidos()
 
-# Rota para excluir pedido
-@app.delete("/pedidos/{pedido_id}")
-async def excluir_pedido(pedido_id: int):
-    # Excluir o pedido e publicar evento no RabbitMQ
-    pedido = {"pedido_id": pedido_id}  # Exemplo de dado a ser enviado
-    enviar_evento(pedido, QUEUE_PEDIDOS_EXCLUIDOS)
-    return {"mensagem": f"Pedido {pedido_id} excluído e evento enviado"}
+    # Gerar um ID único para o pedido (baseado na quantidade de pedidos existentes)
+    novo_id = len(pedidos) + 1
+
+    # Criar o pedido com o ID gerado
+    pedido_criado = Pedido(
+        id=novo_id,
+        cliente_id=pedido.cliente_id,
+        produto=pedido.produto,
+        quantidade=pedido.quantidade,
+        status="pendente"  # Definindo status inicial como "pendente"
+    )
+
+    # Adicionar o novo pedido à lista de pedidos
+    pedidos.append(pedido_criado.dict())
+
+    # Salvar o pedido no arquivo
+    salvar_pedidos(pedidos)
+
+    # Publicar evento no RabbitMQ (simulado)
+    evento_pedido = {
+        "cliente_id": pedido.cliente_id,
+        "produto": pedido.produto,
+        "quantidade": pedido.quantidade,
+    }
+    enviar_evento(evento_pedido, "Pedidos_Criados")
+    
+    #Acordando o microserviço de pagamentos
+    async with httpx.AsyncClient() as client:
+        response = await client.get(f'{PAGAMENTO_SERVICE_URL}/')
+        print(response)
+
+    # Retornar a resposta com a mensagem e o pedido criado
+    return pedido_criado
+
+
+# Rota GET para obter todos os pedidos
+@app.get("/pedidos", response_model=List[Pedido])
+async def listar_carrinho():
+    pedidos = ler_pedidos()
+    return pedidos
 
 # Função de inicialização para consumir eventos
 @app.on_event("startup")
