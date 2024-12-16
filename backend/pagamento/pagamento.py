@@ -6,7 +6,7 @@ from fastapi import FastAPI
 
 app = FastAPI()
 
-RABBITMQ_HOST = 'rabbitmq' 
+RABBITMQ_HOST = 'rabbitmq'
 RABBITMQ_USER = "admin"
 RABBITMQ_PASSWORD = "admin"
 CREDENTIALS = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASSWORD)
@@ -15,10 +15,14 @@ QUEUE_PEDIDOS_CRIADOS = 'Pedidos_Criados'
 QUEUE_PAGAMENTOS_APROVADOS = 'Pagamentos_Aprovados'
 
 # Função para enviar um evento para o RabbitMQ
+
+
 def enviar_evento(evento, routing_key):
     # Estabelece conexão com o RabbitMQ
-    connection = pika.BlockingConnection(pika.ConnectionParameters(host=RABBITMQ_HOST, credentials=CREDENTIALS))
+    connection = pika.BlockingConnection(pika.ConnectionParameters(
+        host=RABBITMQ_HOST, credentials=CREDENTIALS))
     channel = connection.channel()
+    channel.exchange_declare(exchange='default', exchange_type='topic')
 
     # Declarar a exchange que será usada
     channel.exchange_declare(exchange='default', exchange_type='topic')
@@ -30,10 +34,13 @@ def enviar_evento(evento, routing_key):
         body=json.dumps(evento)
     )
 
-    print(f"Evento enviado para a exchange 'default' com chave {routing_key}: {evento}")
+    print(
+        f"Evento enviado para a exchange 'default' com chave {routing_key}: {evento}")
     connection.close()
 
 # Função que consome as mensagens do RabbitMQ na fila Pedidos_Criados
+
+
 def callback(ch, method, properties, body):
     print('aaaaaaaaaa')
     try:
@@ -47,7 +54,8 @@ def callback(ch, method, properties, body):
             "produto": pedido["produto"],
             "quantidade": pedido["quantidade"],
             "status": "Aprovado",  # Status do pagamento
-            "id": f"pgto_{pedido['produto']}_{pedido['cliente_id']}"  # Gerar ID do pagamento
+            # Gerar ID do pagamento
+            "id": f"pgto_{pedido['produto']}_{pedido['cliente_id']}"
         }
 
         # Enviar evento de pagamento aprovado para a fila Pagamentos_Aprovados
@@ -57,28 +65,29 @@ def callback(ch, method, properties, body):
     except json.JSONDecodeError:
         print("Erro ao decodificar a mensagem recebida.")
 
+
 def consumir_pedidos():
-    connection = pika.BlockingConnection(pika.ConnectionParameters(host=RABBITMQ_HOST, credentials=CREDENTIALS))
+    connection = pika.BlockingConnection(pika.ConnectionParameters(
+        host=RABBITMQ_HOST, credentials=CREDENTIALS))
     channel = connection.channel()
+    channel.exchange_declare(exchange='default', exchange_type='topic')
 
     result = channel.queue_declare(queue='', exclusive=True)
     selected = result.method.queue
     channel.queue_bind(exchange='default',
-                        queue=selected, routing_key=QUEUE_PEDIDOS_CRIADOS)
+                       queue=selected, routing_key=QUEUE_PEDIDOS_CRIADOS)
     channel.basic_consume(
         queue=selected, on_message_callback=callback, auto_ack=True)
 
     print('Aguardando mensagens na fila Pedidos_Criados. Para sair pressione CTRL+C')
     channel.start_consuming()
 
-# Função de inicialização para consumir eventos
-def run_rabbitmq_consumer():
-    consumir_pedidos()
 
 @app.get("/")
 def root():
     return {"message": "O consumidor está rodando"}
 
+
 @app.on_event("startup")
 def start_rabbitmq_consumer():
-    threading.Thread(target=run_rabbitmq_consumer, daemon=True).start()
+    threading.Thread(target=consumir_pedidos, daemon=True).start()
