@@ -15,6 +15,6 @@ class Produto(BaseModel):
 class Pedido(BaseModel):
     id: Optional[int]
     cliente_id: int
-    produto_id: int
+    produto: int
     quantidade: int
     status: Optional[str]  # 'pendente', 'aprovado', 'recusado'

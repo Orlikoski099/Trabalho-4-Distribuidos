@@ -3,7 +3,7 @@ import { Component, OnInit } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { AppService } from './app.service';
-import { Products } from './models';
+import { Orders, Products } from './models';
 
 @Component({
   selector: 'app-root',
@@ -18,6 +18,7 @@ export class AppComponent implements OnInit {
   activeTab = 'products'; // Aba ativa inicialmente
   products: Products[] = [];
   cart: Products[] = [];
+  orders: Orders[] = [];
 
   constructor(private appService: AppService) {}
 
@@ -26,34 +27,51 @@ export class AppComponent implements OnInit {
   }
 
   reloadProducts(): void {
-    this.appService.getProducts().subscribe({
-      next: (prods) => {
-        this.products = prods.map((p: any) => {
-          return { ...p, originalStock: p.inStock };
+    switch (this.activeTab) {
+      case 'products': {
+        this.appService.getProducts().subscribe({
+          next: (prods) => {
+            this.products = prods.map((p: any) => {
+              return { ...p, originalStock: p.inStock };
+            });
+          },
+          error: (err) => {
+            console.error('Erro ao buscar produtos:', err);
+          },
         });
-      },
-      error: (err) => {
-        console.error('Erro ao buscar produtos:', err);
-      },
-    });
-
-    this.appService.updateCart().subscribe({
-      next: (prods) => {
-        this.cart = prods.map((p: any) => {
-          return { ...p, originalStock: p.inStock, updatedQuantity: null };
+        break;
+      }
+      case 'cart': {
+        this.appService.updateCart().subscribe({
+          next: (prods) => {
+            this.cart = prods.map((p: any) => {
+              return { ...p, originalStock: p.inStock, updatedQuantity: null };
+            });
+          },
+          error: (err) => {
+            console.error('Erro ao buscar carrinho:', err);
+          },
         });
-      },
-      error: (err) => {
-        console.error('Erro ao buscar carrinho:', err);
-      },
-    });
+        break;
+      }
+      case 'orders': {
+        this.appService.updateOrders().subscribe({
+          next: (orders) => {
+            this.orders = orders.map((p: any) => {
+              return { ...p, originalStock: p.inStock, updatedQuantity: null };
+            });
+          },
+          error: (err) => {
+            console.error('Erro ao buscar carrinho:', err);
+          },
+        });
+      }
+    }
   }
 
-  updateStock(stock: number, quantity: number) {}
-
   setActiveTab(tab: string) {
-    this.reloadProducts();
     this.activeTab = tab;
+    this.reloadProducts();
   }
 
   addToCart(product: Products) {

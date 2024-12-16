@@ -28,6 +28,12 @@ export class AppService {
     return this.http.get(`${this.apiUrl}/carrinho`, { headers });
   }
 
+  updateOrders(): Observable<any> {
+    const headers = this.headers;
+
+    return this.http.get(`${this.apiUrl}/pedidos`, { headers });
+  }
+
   addToCart(item: Products) {
     const headers = this.headers;
     const payload = { ...item };
@@ -53,11 +59,13 @@ export class AppService {
 
   payItem(item: Products) {
     const headers = this.headers;
-    const payload = { 
-        "cliente_id": 1 ,
-        "produto_id": item.id ,
-        "quantidade": item.quantity,
-     };
+    const payload = {
+      id: 0,
+      cliente_id: 1,
+      produto: item.name,
+      quantidade: item.quantity,
+      status: 'pendente',
+    };
 
     return this.http.post(`${this.apiUrl}/pedidos`, payload, { headers });
   }
