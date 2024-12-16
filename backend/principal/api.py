@@ -191,7 +191,6 @@ async def listar_produtos():
     try:
         # Fazendo uma requisição HTTP GET para o microserviço de estoque
         async with httpx.AsyncClient() as client:
-            print(f'{ESTOQUE_SERVICE_URL}/estoque')
             response = await client.get(f'{ESTOQUE_SERVICE_URL}/estoque')
         
         # Se a resposta do microserviço de estoque for bem-sucedida
@@ -299,6 +298,11 @@ async def criar_pedido(pedido: Pedido):
         "quantidade": pedido.quantidade,
     }
     enviar_evento(evento_pedido, "Pedidos_Criados")
+    
+    #Acordando o microserviço de pagamentos
+    async with httpx.AsyncClient() as client:
+        response = await client.get(f'{PAGAMENTO_SERVICE_URL}/')
+        print(response)
 
     # Retornar a resposta com a mensagem e o pedido criado
     return pedido_criado
