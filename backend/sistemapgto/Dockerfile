@@ -5,7 +5,7 @@ FROM python:3.10-slim
 WORKDIR /app
 
 # Instalar dependências diretamente
-RUN pip install --no-cache-dir fastapi uvicorn pydantic httpx pika requests
+RUN pip install --no-cache-dir fastapi uvicorn pydantic httpx pika
 
 # Instalar pyenv
 RUN curl https://pyenv.run | bash
@@ -17,4 +17,4 @@ COPY . .
 EXPOSE 8000
 
 # Iniciar o serviço (ajuste o nome do módulo se necessário)
-CMD ["uvicorn", "pagamento:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "sistemapgto:app", "--host", "0.0.0.0", "--port", "8000"]

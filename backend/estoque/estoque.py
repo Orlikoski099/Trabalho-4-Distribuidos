@@ -149,7 +149,7 @@ def consumir_eventos():
     channel.queue_bind(exchange='default',
                        queue=excluidosNome, routing_key=TOPIC_PEDIDOS_EXCLUIDOS)
     channel.basic_consume(
-        queue=excluidosNome, on_message_callback=callback_pedido_criado, auto_ack=True)
+        queue=excluidosNome, on_message_callback=callback_pedido_excluido, auto_ack=True)
 
     print('Aguardando mensagens nas filas. Para sair, pressione CTRL+C.')
     channel.start_consuming()

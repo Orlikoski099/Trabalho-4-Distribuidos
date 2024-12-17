@@ -1,9 +1,12 @@
 import threading
+import time
 import httpx
 import pika # type: ignore
 import json
-
 from fastapi import FastAPI
+import requests
+
+# URL do webhook do sistema de pagamento
 
 app = FastAPI()
 
@@ -18,8 +21,7 @@ TOPIC_PEDIDOS_ENVIADOS = 'pedidos.enviados'
 TOPIC_PAGAMENTOS_APROVADOS = 'pagamentos.aprovados'
 TOPIC_PAGAMENTOS_RECUSADOS = 'pagamentos.recusados'
 
-NOTIFICACAO_SERVICE_URL = 'http://notificacao:8000'
-
+WEBHOOK_URL = "http://sistemapgto:8000/webhook/pagamento"
 
 def enviar_evento(evento, routing_key):
     connection = pika.BlockingConnection(pika.ConnectionParameters(
@@ -28,6 +30,10 @@ def enviar_evento(evento, routing_key):
     channel.exchange_declare(exchange='default', exchange_type='topic')
 
     channel.exchange_declare(exchange='default', exchange_type='topic')
+
+    # Introduz um delay de 5 simulando loading do pgto
+    print("Aguardando 5 segundos antes de enviar o evento...")
+    time.sleep(5)
 
     channel.basic_publish(
         exchange='default', 
@@ -43,21 +49,53 @@ def enviar_evento(evento, routing_key):
 
 def callback(ch, method, properties, body):
     try:
+        # Decodifica os dados do pedido
         pedido = json.loads(body)
         print(f"Pedido recebido para processamento: {pedido}")
-
-        pagamento_aprovado = {
+        
+        # Monta os dados para o sistema de pagamento
+        dados_pagamento = {
+            "transacao_id": f"pgto_{pedido['produto']}_{pedido['cliente_id']}",
             "cliente_id": pedido["cliente_id"],
             "produto": pedido["produto"],
             "quantidade": pedido["quantidade"],
-            "status": "Aprovado",
-            "id": f"pgto_{pedido['produto']}_{pedido['cliente_id']}"
         }
 
-        enviar_evento(pagamento_aprovado, TOPIC_PAGAMENTOS_APROVADOS)
+        print(dados_pagamento)
+        
+        # Envia a requisição para o webhook do sistema de pagamento
+        response = requests.post(WEBHOOK_URL, json=dados_pagamento)
+        
+        if response.status_code == 200:
+            resposta_pagamento = response.json()
+            print(f"Resposta do sistema de pagamento: {resposta_pagamento}")
+            
+            # Verifica o status do pagamento retornado pelo webhook
+            if resposta_pagamento["status"] == "aprovado":
+                pagamento_aprovado = {
+                    "cliente_id": pedido["cliente_id"],
+                    "produto": pedido["produto"],
+                    "quantidade": pedido["quantidade"],
+                    "status": "Aprovado",
+                    "id": resposta_pagamento["transacao_id"]
+                }
+                enviar_evento(pagamento_aprovado, TOPIC_PAGAMENTOS_APROVADOS)
+            else:
+                pagamento_recusado = {
+                    "cliente_id": pedido["cliente_id"],
+                    "produto": pedido["produto"],
+                    "quantidade": pedido["quantidade"],
+                    "status": "Recusado",
+                    "id": resposta_pagamento["transacao_id"]
+                }
+                enviar_evento(pagamento_recusado, TOPIC_PAGAMENTOS_RECUSADOS)
+        else:
+            print(f"Erro ao conectar com o webhook. Código {response.status_code}")
 
     except json.JSONDecodeError:
         print("Erro ao decodificar a mensagem recebida.")
+    except Exception as e:
+        print(f"Erro inesperado: {e}")
 
 
 def consumir_pedidos():
