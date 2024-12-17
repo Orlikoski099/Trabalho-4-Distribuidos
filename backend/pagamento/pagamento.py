@@ -1,5 +1,6 @@
 import threading
-import pika
+import httpx
+import pika # type: ignore
 import json
 
 from fastapi import FastAPI
@@ -13,6 +14,9 @@ CREDENTIALS = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASSWORD)
 
 QUEUE_PEDIDOS_CRIADOS = 'Pedidos_Criados'
 QUEUE_PAGAMENTOS_APROVADOS = 'Pagamentos_Aprovados'
+
+NOTIFICACAO_SERVICE_URL = 'http://notificacao:8000'
+
 
 # Função para enviar um evento para o RabbitMQ
 

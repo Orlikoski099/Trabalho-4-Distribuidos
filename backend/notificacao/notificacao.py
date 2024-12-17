@@ -1,12 +1,22 @@
 import threading
-import pika
+import pika # type: ignore
 import json
 import queue
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 from starlette.concurrency import run_in_threadpool
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Permite qualquer origem (CUIDADO EM PRODUÇÃO)
+    allow_credentials=True,
+    allow_methods=["*"],  # Permite todos os métodos HTTP
+    allow_headers=["*"],  # Permite todos os cabeçalhos
+)
+
 
 # Configurações do RabbitMQ
 RABBITMQ_HOST = 'rabbitmq'

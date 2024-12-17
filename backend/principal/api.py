@@ -1,5 +1,5 @@
 import os
-import pika
+import pika # type: ignore
 import json
 import httpx
 from fastapi import FastAPI, HTTPException
@@ -299,6 +299,11 @@ async def criar_pedido(pedido: Pedido):
     }
     enviar_evento(evento_pedido, "Pedidos_Criados")
     
+    #Acordando o microserviço de notificações
+    async with httpx.AsyncClient() as client:
+        response = await client.get(f'{NOTIFICACAO_SERVICE_URL}/')
+        print(response)
+
     #Acordando o microserviço de pagamentos
     async with httpx.AsyncClient() as client:
         response = await client.get(f'{PAGAMENTO_SERVICE_URL}/')
