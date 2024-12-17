@@ -112,7 +112,7 @@ def callback_pedido_excluido(ch, method, properties, body):
         estoque = carregar_estoque()
 
         # Busca o produto correspondente ao ID do pedido
-        produto = next((p for p in estoque if p['id'] == pedido['produto']), None)
+        produto = next((p for p in estoque if p['produto'] == pedido['produto']), None)
 
         if not produto:
             print("Erro: Produto não encontrado no estoque.")
@@ -147,7 +147,7 @@ def consumir_eventos():
         queue=criadosNome, on_message_callback=callback_pedido_criado, auto_ack=True)
 
     channel.queue_bind(exchange='default',
-                       queue=excluidosNome, routing_key=TOPIC_PEDIDOS_EXCLUIDOS)
+                       queue=excluidosNome, routing_key=TOPIC_PAGAMENTOS_RECUSADOS)
     channel.basic_consume(
         queue=excluidosNome, on_message_callback=callback_pedido_excluido, auto_ack=True)
 
