@@ -71,7 +71,7 @@ export class AppComponent implements OnInit, OnDestroy {
         this.appService.updateCart().subscribe({
           next: (prods) => {
             this.cart = prods.map((p: any) => {
-              return { ...p, originalStock: p.inStock, updatedQuantity: null };
+              return { ...p, updatedQuantity: null };
             });
           },
           error: (err) => {

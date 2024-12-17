@@ -82,7 +82,7 @@
                 style="margin-right: 20px"
                 (click)="cartActionButton(item)"
               >
-                Atualizar
+                {{ item.updatedQuantity ? "Atualizar" : "Remover" }}
               </button>
               <button
                 (click)="payItem(item, item.id)"
@@ -128,7 +128,6 @@
   <div class="tab-content">
     <div>
       <h2>Notificações</h2>
-      {{ notificacoes | json }}
       <table *ngIf="notificacoes.length > 0; else noNews">
         <thead>
           <tr>

@@ -11,11 +11,11 @@ RABBITMQ_USER = "admin"
 RABBITMQ_PASSWORD = "admin"
 CREDENTIALS = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASSWORD)
 
-QUEUE_PEDIDOS_CRIADOS = 'Pedidos_Criados'
-QUEUE_PEDIDOS_EXCLUIDOS = 'Pedidos_Excluídos'
-QUEUE_PEDIDOS_ENVIADOS = 'Pedidos_Enviados'
-QUEUE_PAGAMENTOS_APROVADOS = 'Pagamentos_Aprovados'
-QUEUE_PAGAMENTOS_RECUSADOS = 'Pagamentos_Recusados'
+TOPIC_PEDIDOS_CRIADOS = 'pedidos.criados'
+TOPIC_PEDIDOS_EXCLUIDOS = 'pedidos.excluídos'
+TOPIC_PEDIDOS_ENVIADOS = 'pedidos.enviados'
+TOPIC_PAGAMENTOS_APROVADOS = 'pagamentos.aprovados'
+TOPIC_PAGAMENTOS_RECUSADOS = 'pagamentos.recusados'
 
 # Função para carregar o estoque do arquivo JSON
 
@@ -142,12 +142,12 @@ def consumir_eventos():
     excluidosNome = excluidos.method.queue
 
     channel.queue_bind(exchange='default',
-                       queue=criadosNome, routing_key=QUEUE_PEDIDOS_CRIADOS)
+                       queue=criadosNome, routing_key=TOPIC_PEDIDOS_CRIADOS)
     channel.basic_consume(
         queue=criadosNome, on_message_callback=callback_pedido_criado, auto_ack=True)
 
     channel.queue_bind(exchange='default',
-                       queue=excluidosNome, routing_key=QUEUE_PEDIDOS_EXCLUIDOS)
+                       queue=excluidosNome, routing_key=TOPIC_PEDIDOS_EXCLUIDOS)
     channel.basic_consume(
         queue=excluidosNome, on_message_callback=callback_pedido_criado, auto_ack=True)
 
@@ -173,7 +173,7 @@ async def criar_pedido(pedido: Pedido):
     produto['quantidade'] -= pedido.quantidade
     salvar_estoque(estoque)
 
-    enviar_evento(pedido.dict(), QUEUE_PEDIDOS_CRIADOS)
+    enviar_evento(pedido.dict(), TOPIC_PEDIDOS_CRIADOS)
 
     return {"message": "Pedido criado com sucesso", "produto": produto}
 
@@ -192,7 +192,7 @@ async def excluir_pedido(pedido: Pedido):
     produto['quantidade'] += pedido.quantidade
     salvar_estoque(estoque)
 
-    enviar_evento(pedido.dict(), QUEUE_PEDIDOS_EXCLUIDOS)
+    enviar_evento(pedido.dict(), TOPIC_PEDIDOS_EXCLUIDOS)
 
     return {"message": "Pedido excluído com sucesso", "produto": produto}
 

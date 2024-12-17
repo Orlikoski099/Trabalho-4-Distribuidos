@@ -17,6 +17,11 @@ app.add_middleware(
     allow_headers=["*"],  # Permite todos os cabeçalhos
 )
 
+TOPIC_PEDIDOS_CRIADOS = 'pedidos.criados'
+TOPIC_PEDIDOS_EXCLUIDOS = 'pedidos.excluídos'
+TOPIC_PEDIDOS_ENVIADOS = 'pedidos.enviados'
+TOPIC_PAGAMENTOS_APROVADOS = 'pagamentos.aprovados'
+TOPIC_PAGAMENTOS_RECUSADOS = 'pagamentos.recusados'
 
 # Configurações do RabbitMQ
 RABBITMQ_HOST = 'rabbitmq'
@@ -26,11 +31,11 @@ CREDENTIALS = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASSWORD)
 
 # Filas que serão escutadas
 FILAS = {
-    "Pedidos_Criados": "pedido.criado",
-    "Pedidos_Excluídos": "pedido.excluido",
-    "Pedidos_Enviados": "pedido.enviado",
-    "Pagamentos_Aprovados": "pagamento.aprovado",
-    "Pagamentos_Recusados": "pagamento.recusado"
+    "Pedidos_Criados": TOPIC_PEDIDOS_CRIADOS,
+    "Pedidos_Excluídos": TOPIC_PEDIDOS_EXCLUIDOS,
+    "Pedidos_Enviados": TOPIC_PEDIDOS_ENVIADOS,
+    "Pagamentos_Aprovados": TOPIC_PAGAMENTOS_APROVADOS,
+    "Pagamentos_Recusados": TOPIC_PAGAMENTOS_RECUSADOS
 }
 
 # Fila de mensagens para SSE

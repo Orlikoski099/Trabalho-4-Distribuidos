@@ -7,29 +7,26 @@ from pydantic import BaseModel
 from typing import List, Optional
 from fastapi.middleware.cors import CORSMiddleware
 
-# Instância principal do FastAPI
 app = FastAPI()
 
-# Configuração do CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Permite qualquer origem (CUIDADO EM PRODUÇÃO)
+    allow_origins=["*"], 
     allow_credentials=True,
-    allow_methods=["*"],  # Permite todos os métodos HTTP
-    allow_headers=["*"],  # Permite todos os cabeçalhos
+    allow_methods=["*"], 
+    allow_headers=["*"], 
 )
 
-# Configurações do RabbitMQ
 RABBITMQ_HOST = 'rabbitmq' 
 RABBITMQ_USER = "admin"
 RABBITMQ_PASSWORD = "admin"
 CREDENTIALS = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASSWORD)
 
-QUEUE_PEDIDOS_CRIADOS = 'Pedidos_Criados'
-QUEUE_PEDIDOS_EXCLUIDOS = 'Pedidos_Excluídos'
-QUEUE_PEDIDOS_ENVIADOS = 'Pedidos_Enviados'
-QUEUE_PAGAMENTOS_APROVADOS = 'Pagamentos_Aprovados'
-QUEUE_PAGAMENTOS_RECUSADOS = 'Pagamentos_Recusados'
+TOPIC_PEDIDOS_CRIADOS = 'pedidos.criados'
+TOPIC_PEDIDOS_EXCLUIDOS = 'pedidos.excluídos'
+TOPIC_PEDIDOS_ENVIADOS = 'pedidos.enviados'
+TOPIC_PAGAMENTOS_APROVADOS = 'pagamentos.aprovados'
+TOPIC_PAGAMENTOS_RECUSADOS = 'pagamentos.recusados'
 
 
 ESTOQUE_SERVICE_URL = 'http://estoque:8000'
@@ -40,7 +37,7 @@ PAGAMENTO_SERVICE_URL = 'http://pagamento:8000'
 CARRINHO_FILE_PATH = "carrinho.json"
 PEDIDOS_FILE_PATH = 'pedidos.json'
 
-# Definindo o modelo de produto com base na interface Products
+# Modelo de produto com base na interface Products
 class Produto(BaseModel):
     id: int
     name: str
@@ -57,15 +54,12 @@ class Pedido(BaseModel):
     status: Optional[str]  # 'pendente', 'aprovado', 'recusado'
 
 
-# Função para enviar eventos para o RabbitMQ
 def enviar_evento(evento: dict, routing_key: str):
     connection = pika.BlockingConnection(pika.ConnectionParameters(host=RABBITMQ_HOST, credentials=CREDENTIALS))
     channel = connection.channel()
     
-    # Declarar a exchange, por exemplo, do tipo "topic"
     channel.exchange_declare(exchange='default', exchange_type='topic')
     
-    # Publicar a mensagem na exchange com a chave de roteamento
     channel.basic_publish(exchange='default', routing_key=routing_key, body=json.dumps(evento))
     
     connection.close()
@@ -75,10 +69,8 @@ def consumir_eventos():
         connection = pika.BlockingConnection(pika.ConnectionParameters(host=RABBITMQ_HOST))
         channel = connection.channel()
 
-        # Declarar a exchange que será usada
         channel.exchange_declare(exchange='default', exchange_type='topic')
         
-        # Declarar as filas que o serviço irá consumir
         result_1 = channel.queue_declare(queue='', exclusive=True)
         result_2 = channel.queue_declare(queue='', exclusive=True)
         result_3 = channel.queue_declare(queue='', exclusive=True)
@@ -87,31 +79,27 @@ def consumir_eventos():
         selected_2 = result_2.method.queue
         selected_3 = result_3.method.queue
 
+        channel.queue_bind(exchange='default', queue=selected_1, routing_key=TOPIC_PAGAMENTOS_APROVADOS)
+        channel.queue_bind(exchange='default', queue=selected_2, routing_key=TOPIC_PAGAMENTOS_RECUSADOS)
+        channel.queue_bind(exchange='default', queue=selected_3, routing_key=TOPIC_PEDIDOS_ENVIADOS)
 
-        # Vincular as filas à exchange com suas respectivas chaves de roteamento
-        channel.queue_bind(exchange='default', queue=selected_1, routing_key=QUEUE_PAGAMENTOS_APROVADOS)
-        channel.queue_bind(exchange='default', queue=selected_2, routing_key=QUEUE_PAGAMENTOS_RECUSADOS)
-        channel.queue_bind(exchange='default', queue=selected_3, routing_key=QUEUE_PEDIDOS_ENVIADOS)
-
-        # Função de callback para processar os eventos
         def callback(ch, method, properties, body):
             evento = json.loads(body)
-            if method.routing_key == QUEUE_PAGAMENTOS_APROVADOS:
+            if method.routing_key == TOPIC_PAGAMENTOS_APROVADOS:
                 print(f"Pagamento aprovado para pedido {evento['pedido_id']}")
-            elif method.routing_key == QUEUE_PAGAMENTOS_RECUSADOS:
+            elif method.routing_key == TOPIC_PAGAMENTOS_RECUSADOS:
                 print(f"Pagamento recusado para pedido {evento['pedido_id']}")
-            elif method.routing_key == QUEUE_PEDIDOS_ENVIADOS:
+            elif method.routing_key == TOPIC_PEDIDOS_ENVIADOS:
                 print(f"Pedido {evento['pedido_id']} enviado")
             
             ch.basic_ack(delivery_tag=method.delivery_tag)
 
-        # Consumir os eventos
         channel.basic_consume(
             queue=selected_1, on_message_callback=callback, auto_ack=True)
-        # Consumir os eventos
+        
         channel.basic_consume(
             queue=selected_2, on_message_callback=callback, auto_ack=True)
-        # Consumir os eventos
+        
         channel.basic_consume(
             queue=selected_3, on_message_callback=callback, auto_ack=True)
 
@@ -121,63 +109,56 @@ def consumir_eventos():
     except Exception as e:
         print(f"Erro ao consumir eventos: {e}")
 
-# Função para ler o carrinho
 def ler_carrinho():
     if not os.path.exists(CARRINHO_FILE_PATH):
         # Caso o arquivo não exista, cria um arquivo vazio
         with open(CARRINHO_FILE_PATH, 'w') as file:
             json.dump([], file)
-        print(f"Arquivo {CARRINHO_FILE_PATH} criado com carrinho vazio.")  # Log de criação do arquivo
-        return []  # Retorna uma lista vazia
-
+        print(f"Arquivo {CARRINHO_FILE_PATH} criado com carrinho vazio.") 
+        return [] 
     with open(CARRINHO_FILE_PATH, 'r') as file:
         try:
-            # Tenta carregar o conteúdo do arquivo JSON
             carrinho = json.load(file)
-            print(f"Carrinho carregado: {carrinho}")  # Log para verificar o conteúdo carregado
+            print(f"Carrinho carregado: {carrinho}")
             return carrinho
         except json.JSONDecodeError:
-            # Caso o arquivo esteja vazio ou com conteúdo inválido
             print(f"Erro ao decodificar JSON no arquivo {CARRINHO_FILE_PATH}. Retornando carrinho vazio.")
-            return []  # Retorna uma lista vazia se o arquivo estiver vazio ou corrompido
+            return [] 
         
-# Função para salvar o conteúdo do carrinho
 def salvar_carrinho(carrinho):
     try:
         with open(CARRINHO_FILE_PATH, 'w') as file:
             json.dump(carrinho, file, indent=4)
-            print(f"Carrinho salvo com sucesso em {CARRINHO_FILE_PATH}.")  # Log para confirmar a gravação
+            print(f"Carrinho salvo com sucesso em {CARRINHO_FILE_PATH}.") 
     except Exception as e:
-        print(f"Erro ao salvar o carrinho no arquivo {CARRINHO_FILE_PATH}: {e}")  # Log de erro ao salvar
+        print(f"Erro ao salvar o carrinho no arquivo {CARRINHO_FILE_PATH}: {e}")
 
-# Função para ler os pedidos do arquivo
 def ler_pedidos() -> List[dict]:
     if not os.path.exists(PEDIDOS_FILE_PATH):
         # Caso o arquivo não exista, cria um arquivo vazio
         with open(PEDIDOS_FILE_PATH, 'w') as file:
             json.dump([], file)
-        print(f"Arquivo {PEDIDOS_FILE_PATH} criado com pedidos vazios.")  # Log de criação do arquivo
-        return []  # Retorna uma lista vazia
+        print(f"Arquivo {PEDIDOS_FILE_PATH} criado com pedidos vazios.") 
+        return [] 
 
     with open(PEDIDOS_FILE_PATH, 'r') as file:
         try:
-            # Tenta carregar o conteúdo do arquivo JSON
+        
             pedidos = json.load(file)
-            print(f"Pedidos carregados: {pedidos}")  # Log para verificar o conteúdo carregado
+            print(f"Pedidos carregados: {pedidos}") 
             return pedidos
         except json.JSONDecodeError:
-            # Caso o arquivo esteja vazio ou com conteúdo inválido
+        
             print(f"Erro ao decodificar JSON no arquivo {PEDIDOS_FILE_PATH}. Retornando pedidos vazios.")
-            return []  # Retorna uma lista vazia se o arquivo estiver vazio ou corrompido
+            return [] 
 
-# Função para salvar os pedidos no arquivo
 def salvar_pedidos(pedidos: List[dict]):
     try:
         with open(PEDIDOS_FILE_PATH, 'w') as file:
             json.dump(pedidos, file, indent=4)
-            print(f"Pedidos salvos com sucesso em {PEDIDOS_FILE_PATH}.")  # Log para confirmar a gravação
+            print(f"Pedidos salvos com sucesso em {PEDIDOS_FILE_PATH}.") 
     except Exception as e:
-        print(f"Erro ao salvar os pedidos no arquivo {PEDIDOS_FILE_PATH}: {e}")  # Log de erro ao salvar
+        print(f"Erro ao salvar os pedidos no arquivo {PEDIDOS_FILE_PATH}: {e}") 
 
 @app.get("/")
 async def root():
@@ -185,17 +166,14 @@ async def root():
 
 ###################################################################
 
-# Visualização de todos os produtos
 @app.get("/produtos")
 async def listar_produtos():
     try:
-        # Fazendo uma requisição HTTP GET para o microserviço de estoque
         async with httpx.AsyncClient() as client:
             response = await client.get(f'{ESTOQUE_SERVICE_URL}/estoque')
         
-        # Se a resposta do microserviço de estoque for bem-sucedida
         if response.status_code == 200:
-            return response.json()  # Retorna os dados do estoque
+            return response.json()
         else:
             raise HTTPException(status_code=response.status_code, detail="Erro ao obter produtos do estoque")
     
@@ -210,12 +188,10 @@ async def listar_carrinho():
     carrinho = ler_carrinho()
     return carrinho
 
-# Rota POST para adicionar um produto ao carrinho
 @app.post("/carrinho", response_model=Produto)
 async def adicionar_ao_carrinho(produto: Produto):
     carrinho = ler_carrinho()
 
-    # Verifica se o produto já está no carrinho
     for item in carrinho:
         if item["id"] == produto.id:
             item["quantity"]
@@ -223,12 +199,11 @@ async def adicionar_ao_carrinho(produto: Produto):
             salvar_carrinho(carrinho)
             return item
     
-    # Se não estiver, adiciona o novo produto
     carrinho.append({
         "id": produto.id,
         "name": produto.name,
         "originalStock": produto.originalStock,
-        "inStock": produto.inStock - produto.quantity,  # Subtrai do estoque
+        "inStock": produto.originalStock - produto.quantity,  # Subtrai do estoque
         "quantity": produto.quantity
     })
     salvar_carrinho(carrinho)
@@ -285,19 +260,17 @@ async def criar_pedido(pedido: Pedido):
         status="pendente"  # Definindo status inicial como "pendente"
     )
 
-    # Adicionar o novo pedido à lista de pedidos
     pedidos.append(pedido_criado.dict())
 
-    # Salvar o pedido no arquivo
     salvar_pedidos(pedidos)
 
-    # Publicar evento no RabbitMQ (simulado)
     evento_pedido = {
         "cliente_id": pedido.cliente_id,
         "produto": pedido.produto,
         "quantidade": pedido.quantidade,
+        "status": 'Criado'
     }
-    enviar_evento(evento_pedido, "Pedidos_Criados")
+    enviar_evento(evento_pedido, TOPIC_PEDIDOS_CRIADOS)
     
     #Acordando o microserviço de notificações
     async with httpx.AsyncClient() as client:
@@ -309,7 +282,11 @@ async def criar_pedido(pedido: Pedido):
         response = await client.get(f'{PAGAMENTO_SERVICE_URL}/')
         print(response)
 
-    # Retornar a resposta com a mensagem e o pedido criado
+        #Acordando o microserviço de entrega
+    async with httpx.AsyncClient() as client:
+        response = await client.get(f'{ENTREGA_SERVICE_URL}/')
+        print(response)
+
     return pedido_criado
 
 
