@@ -82,7 +82,7 @@
                 style="margin-right: 20px"
                 (click)="cartActionButton(item)"
               >
-                Atualizar
+                {{ item.updatedQuantity ? "Atualizar" : "Remover" }}
               </button>
               <button
                 (click)="payItem(item, item.id)"
@@ -122,6 +122,30 @@
       </table>
       <ng-template #noOrders>
         <p>Você ainda não tem pedidos realizados. {{ ":(" }}</p>
+      </ng-template>
+    </div>
+  </div>
+  <div class="tab-content">
+    <div>
+      <h2>Notificações</h2>
+      <table *ngIf="notificacoes.length > 0; else noNews">
+        <thead>
+          <tr>
+            <th>Produto</th>
+            <th>Quantidade</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let item of notificacoes">
+            <td>{{ item.dados.produto }}</td>
+            <td>{{ item.dados.quantidade }}</td>
+            <td>{{ item.dados.status }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <ng-template #noNews>
+        <p>Você não tem notificações!</p>
       </ng-template>
     </div>
   </div>

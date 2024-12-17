@@ -1,5 +1,6 @@
 import threading
-import pika
+import httpx
+import pika # type: ignore
 import json
 
 from fastapi import FastAPI
@@ -11,26 +12,26 @@ RABBITMQ_USER = "admin"
 RABBITMQ_PASSWORD = "admin"
 CREDENTIALS = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASSWORD)
 
-QUEUE_PEDIDOS_CRIADOS = 'Pedidos_Criados'
-QUEUE_PAGAMENTOS_APROVADOS = 'Pagamentos_Aprovados'
+TOPIC_PEDIDOS_CRIADOS = 'pedidos.criados'
+TOPIC_PEDIDOS_EXCLUIDOS = 'pedidos.excluídos'
+TOPIC_PEDIDOS_ENVIADOS = 'pedidos.enviados'
+TOPIC_PAGAMENTOS_APROVADOS = 'pagamentos.aprovados'
+TOPIC_PAGAMENTOS_RECUSADOS = 'pagamentos.recusados'
 
-# Função para enviar um evento para o RabbitMQ
+NOTIFICACAO_SERVICE_URL = 'http://notificacao:8000'
 
 
 def enviar_evento(evento, routing_key):
-    # Estabelece conexão com o RabbitMQ
     connection = pika.BlockingConnection(pika.ConnectionParameters(
         host=RABBITMQ_HOST, credentials=CREDENTIALS))
     channel = connection.channel()
     channel.exchange_declare(exchange='default', exchange_type='topic')
 
-    # Declarar a exchange que será usada
     channel.exchange_declare(exchange='default', exchange_type='topic')
 
-    # Publica o evento na exchange com a chave de roteamento
     channel.basic_publish(
-        exchange='default',  # Usando a exchange 'default'
-        routing_key=routing_key,  # Usando a chave de roteamento
+        exchange='default', 
+        routing_key=routing_key, 
         body=json.dumps(evento)
     )
 
@@ -38,28 +39,22 @@ def enviar_evento(evento, routing_key):
         f"Evento enviado para a exchange 'default' com chave {routing_key}: {evento}")
     connection.close()
 
-# Função que consome as mensagens do RabbitMQ na fila Pedidos_Criados
 
 
 def callback(ch, method, properties, body):
     try:
-        # Recebe os dados do pedido
         pedido = json.loads(body)
         print(f"Pedido recebido para processamento: {pedido}")
 
-        # Lógica de processamento do pagamento (aqui podemos simular como aprovado)
         pagamento_aprovado = {
             "cliente_id": pedido["cliente_id"],
             "produto": pedido["produto"],
             "quantidade": pedido["quantidade"],
-            "status": "Aprovado",  # Status do pagamento
-            # Gerar ID do pagamento
+            "status": "Aprovado",
             "id": f"pgto_{pedido['produto']}_{pedido['cliente_id']}"
         }
 
-        # Enviar evento de pagamento aprovado para a fila Pagamentos_Aprovados
-        # Agora você envia para uma exchange com a chave de roteamento apropriada
-        enviar_evento(pagamento_aprovado, "pagamento.aprovado")
+        enviar_evento(pagamento_aprovado, TOPIC_PAGAMENTOS_APROVADOS)
 
     except json.JSONDecodeError:
         print("Erro ao decodificar a mensagem recebida.")
@@ -74,7 +69,7 @@ def consumir_pedidos():
     result = channel.queue_declare(queue='', exclusive=True)
     selected = result.method.queue
     channel.queue_bind(exchange='default',
-                       queue=selected, routing_key=QUEUE_PEDIDOS_CRIADOS)
+                       queue=selected, routing_key=TOPIC_PEDIDOS_CRIADOS)
     channel.basic_consume(
         queue=selected, on_message_callback=callback, auto_ack=True)
 

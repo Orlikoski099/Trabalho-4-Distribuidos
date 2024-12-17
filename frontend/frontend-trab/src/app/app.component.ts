@@ -1,9 +1,11 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { AppService } from './app.service';
+import { NotificacaoService } from './notification.service';
 import { Orders, Products } from './models';
+import { Subscription } from 'rxjs';
 
 @Component({
   selector: 'app-root',
@@ -13,17 +15,41 @@ import { Orders, Products } from './models';
   templateUrl: './app.component.html',
   styleUrls: ['./app.component.scss'],
 })
-export class AppComponent implements OnInit {
+export class AppComponent implements OnInit, OnDestroy {
   title = 'frontend-trab';
   activeTab = 'products'; // Aba ativa inicialmente
   products: Products[] = [];
   cart: Products[] = [];
   orders: Orders[] = [];
 
-  constructor(private appService: AppService) {}
+  notificacoes: any[] = [];
+  private notificacaoSub: Subscription | null = null;
+
+  constructor(
+    private appService: AppService,
+    private notificacaoService: NotificacaoService
+  ) {}
 
   ngOnInit(): void {
     this.reloadProducts();
+
+    // Conecta ao SSE e escuta as notificações
+    this.notificacaoSub = this.notificacaoService
+      .conectar('http://localhost:8004/notificacoes') // URL do SSE
+      .subscribe({
+        next: (data) => {
+          console.log('Notificação recebida:', data);
+          this.notificacoes.push(data);
+        },
+        error: (err) => console.error('Erro no SSE:', err),
+        complete: () => console.log('Conexão SSE concluída.'),
+      });
+  }
+
+  ngOnDestroy(): void {
+    // Fecha a conexão ao destruir o componente
+    this.notificacaoSub?.unsubscribe();
+    this.notificacaoService.fecharConexao();
   }
 
   reloadProducts(): void {
@@ -45,7 +71,7 @@ export class AppComponent implements OnInit {
         this.appService.updateCart().subscribe({
           next: (prods) => {
             this.cart = prods.map((p: any) => {
-              return { ...p, originalStock: p.inStock, updatedQuantity: null };
+              return { ...p, updatedQuantity: null };
             });
           },
           error: (err) => {
