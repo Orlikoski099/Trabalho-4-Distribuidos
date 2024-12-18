@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { Products } from './models';
+import { Cart, Products } from './models';
 
 @Injectable({
   providedIn: 'root',
@@ -36,34 +36,43 @@ export class AppService {
 
   addToCart(item: Products) {
     const headers = this.headers;
-    const payload = { ...item };
+    const payload = {
+      client_id: 1,
+      product_name: item.name,
+      product_id: item.id,
+      available_stock: 0,
+      quantity: item.quantity,
+    };
 
     return this.http.post(`${this.apiUrl}/carrinho`, payload, { headers });
   }
-  removeFromCart(id: number) {
+  removeFromCart(id: number, client_id: number) {
     const headers = this.headers;
 
-    return this.http.delete(`${this.apiUrl}/carrinho/${id}`, { headers });
+    return this.http.delete(`${this.apiUrl}/carrinho/${client_id}/${id}`, {
+      headers,
+    });
   }
 
-  adjustInCart(item: Products) {
+  adjustInCart(item: Cart, client_id: number) {
     const headers = this.headers;
 
     return this.http.patch(
-      `${this.apiUrl}/carrinho/${item.id}/${item.quantity}`,
+      `${this.apiUrl}/carrinho/${client_id}/${item.product_id}/${item.quantity}`,
       {
         headers,
       }
     );
   }
 
-  payItem(item: Products) {
+  payItem(item: Cart) {
     const headers = this.headers;
     const payload = {
       id: 0,
-      cliente_id: 1,
-      produto: item.name,
-      quantidade: item.quantity,
+      client_id: 1,
+      product_id: item.product_id,
+      product_name: item.product_name,
+      quantity: item.quantity,
       status: 'pendente',
     };
 
