@@ -6,9 +6,10 @@ app = FastAPI()
 
 class Pagamento(BaseModel):
     transacao_id: str
-    cliente_id: int 
-    produto: str
-    quantidade: int
+    client_id: int 
+    product_id: int
+    product_name: str
+    quantity: int
 
 @app.post("/webhook/pagamento")
 async def webhook_pagamento(pagamento: Pagamento):
@@ -16,10 +17,11 @@ async def webhook_pagamento(pagamento: Pagamento):
     
     resposta = {
         "transacao_id": pagamento.transacao_id,
+        "client_id": pagamento.client_id,
+        "product_id": pagamento.product_id,
+        "product_name": pagamento.product_name,
+        "quantity": pagamento.quantity,
         "status": status,
-        "cliente_id": pagamento.cliente_id,
-        "produto": pagamento.produto,
-        "quantidade": pagamento.quantidade
     }
 
     print(f"Pagamento processado: {resposta}")

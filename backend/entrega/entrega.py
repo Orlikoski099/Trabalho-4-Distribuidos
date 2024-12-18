@@ -43,31 +43,39 @@ def enviar_evento(evento, routing_key):
     connection.close()
 
 
-# Função que consome as mensagens do RabbitMQ na fila Pagamentos_Aprovados
 def callback(ch, method, properties, body):
     try:
         # Recebe os dados do pedido
         pedido = json.loads(body)
         print(f"Pedido recebido para processamento: {pedido}")
 
-        # Lógica de processamento do pagamento (aqui podemos simular como aprovado)
+        # Validação do formato do pedido
+        if not all(key in pedido for key in ["id", "client_id", "product_id", "product_name", "quantity", "status"]):
+            print("Erro: Formato de pedido inválido.")
+            return
+
+        # Atualiza o status para "enviado" e monta os dados atualizados do pedido
         pedido_enviado = {
-            "cliente_id": pedido["cliente_id"],
-            "produto": pedido["produto"],
-            "quantidade": pedido["quantidade"],
-            "status": "Enviado", 
-            "id": f"pgto_{pedido['produto']}_{pedido['cliente_id']}"
+            "id": pedido["id"],
+            "client_id": pedido["client_id"],
+            "product_id": pedido["product_id"],
+            "product_name": pedido["product_name"],
+            "quantity": pedido["quantity"],
+            "status": "enviado",  # Atualiza o status para "enviado"
         }
 
         # Introduz um delay de 5 segundos antes de enviar o evento
         print("Aguardando 5 segundos antes de enviar o evento...")
         time.sleep(5)
 
-        # Enviar evento de pagamento aprovado para a fila Pedidos_Enviados
+        # Envia o evento de pedido "enviado" para a fila TOPIC_PEDIDOS_ENVIADOS
         enviar_evento(pedido_enviado, TOPIC_PEDIDOS_ENVIADOS)
+        print(f"Pedido enviado com sucesso para a fila: {TOPIC_PEDIDOS_ENVIADOS}")
 
     except json.JSONDecodeError:
         print("Erro ao decodificar a mensagem recebida.")
+    except Exception as e:
+        print(f"Erro inesperado: {e}")
 
 
 # Função que consome as mensagens da fila de pagamentos aprovados

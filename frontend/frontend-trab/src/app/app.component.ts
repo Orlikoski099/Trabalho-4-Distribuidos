@@ -4,7 +4,7 @@ import { RouterOutlet } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { AppService } from './app.service';
 import { NotificacaoService } from './notification.service';
-import { Orders, Products } from './models';
+import { Cart, Orders, Products } from './models';
 import { Subscription } from 'rxjs';
 
 @Component({
@@ -19,7 +19,7 @@ export class AppComponent implements OnInit, OnDestroy {
   title = 'frontend-trab';
   activeTab = 'products'; // Aba ativa inicialmente
   products: Products[] = [];
-  cart: Products[] = [];
+  cart: Cart[] = [];
   orders: Orders[] = [];
 
   notificacoes: any[] = [];
@@ -32,7 +32,10 @@ export class AppComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.reloadProducts();
+    this.startNotificator();
+  }
 
+  startNotificator() {
     // Conecta ao SSE e escuta as notificações
     this.notificacaoSub = this.notificacaoService
       .conectar('http://localhost:8004/notificacoes') // URL do SSE
@@ -58,7 +61,7 @@ export class AppComponent implements OnInit, OnDestroy {
         this.appService.getProducts().subscribe({
           next: (prods) => {
             this.products = prods.map((p: any) => {
-              return { ...p, originalStock: p.inStock };
+              return { ...p, originalStock: p.stock };
             });
           },
           error: (err) => {
@@ -84,7 +87,7 @@ export class AppComponent implements OnInit, OnDestroy {
         this.appService.updateOrders().subscribe({
           next: (orders) => {
             this.orders = orders.map((p: any) => {
-              return { ...p, originalStock: p.inStock, updatedQuantity: null };
+              return { ...p, originalStock: p.stock, updatedQuantity: null };
             });
           },
           error: (err) => {
@@ -105,11 +108,12 @@ export class AppComponent implements OnInit, OnDestroy {
       next: () => {
         alert('Produto adicionado ao carrinho');
       },
+      complete: () => this.reloadProducts(),
     });
   }
 
   removeFromCart(product: number) {
-    this.appService.removeFromCart(product).subscribe({
+    this.appService.removeFromCart(product, 1).subscribe({
       next: () => {
         alert('Produto removido do carrinho');
       },
@@ -117,8 +121,8 @@ export class AppComponent implements OnInit, OnDestroy {
     });
   }
 
-  adjustInCart(product: Products) {
-    this.appService.adjustInCart(product).subscribe({
+  adjustInCart(product: Cart) {
+    this.appService.adjustInCart(product, 1).subscribe({
       next: () => {
         alert('Produto atualizado no carrinho');
       },
@@ -126,10 +130,9 @@ export class AppComponent implements OnInit, OnDestroy {
     });
   }
 
-  cartActionButton(product: Products) {
-    console.log(product);
+  cartActionButton(product: Cart) {
     if (!product.updatedQuantity) {
-      this.removeFromCart(product.id);
+      this.removeFromCart(product.product_id);
     } else {
       const payload = {
         ...product,
@@ -146,7 +149,7 @@ export class AppComponent implements OnInit, OnDestroy {
       },
       complete: () => {
         this.reloadProducts();
-        this.removeFromCart(item.id);
+        this.removeFromCart(item.product_id);
       },
     });
   }
