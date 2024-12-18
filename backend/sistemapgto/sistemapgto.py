@@ -11,6 +11,8 @@ class Pagamento(BaseModel):
     product_name: str
     quantity: int
 
+###################################################################
+
 @app.post("/webhook/pagamento")
 async def webhook_pagamento(pagamento: Pagamento):
     status = "aprovado" if random.choice([True, False]) else "recusado"

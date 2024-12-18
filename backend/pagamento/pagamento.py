@@ -4,9 +4,7 @@ import httpx
 import pika # type: ignore
 import json
 from fastapi import FastAPI
-import requests
-
-# URL do webhook do sistema de pagamento
+import requests # type: ignore
 
 app = FastAPI()
 
@@ -22,6 +20,8 @@ TOPIC_PAGAMENTOS_APROVADOS = 'pagamentos.aprovados'
 TOPIC_PAGAMENTOS_RECUSADOS = 'pagamentos.recusados'
 
 WEBHOOK_URL = "http://sistemapgto:8000/webhook/pagamento"
+
+###################################################################
 
 def enviar_evento(evento, routing_key):
     connection = pika.BlockingConnection(pika.ConnectionParameters(
@@ -47,16 +47,13 @@ def enviar_evento(evento, routing_key):
 
 def callback(ch, method, properties, body):
     try:
-        # Decodifica os dados do pedido
         pedido = json.loads(body)
         print(f"Pedido recebido para processamento: {pedido}")
 
-        # Valida o formato do pedido recebido
         if not all(key in pedido for key in ["id", "client_id", "product_id", "product_name", "quantity", "status"]):
             print("Erro: Formato de pedido inválido.")
             return
 
-        # Monta os dados para o sistema de pagamento
         dados_pagamento = {
             "transacao_id": f"pgto_{pedido['id']}",
             "client_id": pedido["client_id"],
@@ -67,14 +64,12 @@ def callback(ch, method, properties, body):
 
         print(f"Enviando dados para o sistema de pagamento: {dados_pagamento}")
 
-        # Envia a requisição para o webhook do sistema de pagamento
         response = requests.post(WEBHOOK_URL, json=dados_pagamento)
 
         if response.status_code == 200:
             resposta_pagamento = response.json()
             print(f"Resposta do sistema de pagamento: {resposta_pagamento}")
 
-            # Atualiza o status do pedido baseado no retorno do sistema de pagamento
             if resposta_pagamento.get("status") == "aprovado":
                 pedido_atualizado = {
                     "id": pedido["id"],
@@ -115,7 +110,6 @@ def callback(ch, method, properties, body):
     except Exception as e:
         print(f"Erro inesperado: {e}")
 
-
 def consumir_pedidos():
     connection = pika.BlockingConnection(pika.ConnectionParameters(
         host=RABBITMQ_HOST, credentials=CREDENTIALS))
@@ -132,11 +126,11 @@ def consumir_pedidos():
     print('Aguardando mensagens na fila Pedidos_Criados. Para sair pressione CTRL+C')
     channel.start_consuming()
 
+###################################################################
 
 @app.get("/")
 def root():
     return {"message": "O consumidor está rodando"}
-
 
 @app.on_event("startup")
 def start_rabbitmq_consumer():

@@ -76,31 +76,25 @@ def consumir_eventos():
         connection = pika.BlockingConnection(pika.ConnectionParameters(host=RABBITMQ_HOST, credentials=CREDENTIALS))
         channel = connection.channel()
 
-        # Declarar o exchange
         channel.exchange_declare(exchange='default', exchange_type='topic')
 
-        # Criar as filas exclusivas para escutar os tópicos
         result_pagamentos_aprovados = channel.queue_declare(queue='', exclusive=True)
         result_pagamentos_recusados = channel.queue_declare(queue='', exclusive=True)
         result_pedidos_enviados = channel.queue_declare(queue='', exclusive=True)
 
-        # Obter os nomes das filas criadas
         fila_pagamentos_aprovados = result_pagamentos_aprovados.method.queue
         fila_pagamentos_recusados = result_pagamentos_recusados.method.queue
         fila_pedidos_enviados = result_pedidos_enviados.method.queue
 
-        # Vincular as filas aos tópicos específicos
         channel.queue_bind(exchange='default', queue=fila_pagamentos_aprovados, routing_key=TOPIC_PAGAMENTOS_APROVADOS)
         channel.queue_bind(exchange='default', queue=fila_pagamentos_recusados, routing_key=TOPIC_PAGAMENTOS_RECUSADOS)
         channel.queue_bind(exchange='default', queue=fila_pedidos_enviados, routing_key=TOPIC_PEDIDOS_ENVIADOS)
 
-        # Função para processar eventos recebidos
         def callback(ch, method, properties, body):
             try:
                 evento = json.loads(body)
                 print(f"Evento recebido na fila '{method.routing_key}': {evento}")
 
-                # Atualizar o status do pedido conforme o tópico
                 if method.routing_key == TOPIC_PAGAMENTOS_APROVADOS:
                     print(f"Atualizando status do pedido {evento['id']} para 'aprovado'")
                     evento["status"] = "aprovado"
@@ -116,7 +110,6 @@ def consumir_eventos():
                     evento["status"] = "enviado"
                     atualizar_pedido(evento)
 
-                # Confirmar recebimento da mensagem
                 ch.basic_ack(delivery_tag=method.delivery_tag)
 
             except json.JSONDecodeError:
@@ -124,7 +117,6 @@ def consumir_eventos():
             except Exception as e:
                 print(f"Erro ao processar evento: {e}")
 
-        # Consumir mensagens das filas com callbacks específicos
         channel.basic_consume(queue=fila_pagamentos_aprovados, on_message_callback=callback)
         channel.basic_consume(queue=fila_pagamentos_recusados, on_message_callback=callback)
         channel.basic_consume(queue=fila_pedidos_enviados, on_message_callback=callback)
@@ -137,7 +129,6 @@ def consumir_eventos():
 
 def ler_carrinho():
     if not os.path.exists(CARRINHO_FILE_PATH):
-        # Caso o arquivo não exista, cria um arquivo vazio
         with open(CARRINHO_FILE_PATH, 'w') as file:
             json.dump([], file)
         print(f"Arquivo {CARRINHO_FILE_PATH} criado com carrinho vazio.") 
@@ -161,7 +152,6 @@ def salvar_carrinho(carrinho):
 
 def ler_pedidos() -> List[dict]:
     if not os.path.exists(PEDIDOS_FILE_PATH):
-        # Caso o arquivo não exista, cria um arquivo vazio
         with open(PEDIDOS_FILE_PATH, 'w') as file:
             json.dump([], file)
         print(f"Arquivo {PEDIDOS_FILE_PATH} criado com pedidos vazios.") 
@@ -188,24 +178,19 @@ def salvar_pedidos(pedidos: List[dict]):
 
 def atualizar_pedido(evento: dict):
     try:
-        # Carrega os pedidos do arquivo
         pedidos = ler_pedidos()
 
-        # Procura o pedido que corresponde ao ID do evento
         pedido_encontrado = False
         for pedido in pedidos:
             if pedido["id"] == evento["id"]:
-                # Atualiza o status do pedido
                 pedido["status"] = evento["status"]
                 pedido_encontrado = True
                 print(f"Pedido {evento['id']} atualizado para status '{evento['status']}'.")
 
-        # Se o pedido não for encontrado, adiciona um novo
         if not pedido_encontrado:
             pedidos.append(evento)
             print(f"Novo pedido {evento['id']} adicionado com status '{evento['status']}'.")
 
-        # Salva os pedidos de volta no arquivo
         salvar_pedidos(pedidos)
 
     except Exception as e:
@@ -235,29 +220,24 @@ async def listar_products():
     
 ###################################################################
 
-# Rota GET para obter todos os produtos do carrinho
 @app.get("/carrinho", response_model=List[Carrinho])
 async def listar_carrinho():
     carrinho = ler_carrinho()
 
-    # Atualizar o available_stock de cada item no carrinho
     async with httpx.AsyncClient() as client:
         for item in carrinho:
             try:
-                # Consultar o estoque para o produto atual
                 response = await client.get(f"{ESTOQUE_SERVICE_URL}/estoque/{item['product_id']}")
                 response.raise_for_status()
                 estoque_data = response.json()
                 
-                # Atualizar o campo available_stock no item
                 item["available_stock"] = estoque_data
             except httpx.HTTPStatusError as e:
                 print(f"Erro ao buscar estoque para o produto {item['product_id']}: {e}")
-                item["available_stock"] = 0  # Define como 0 caso ocorra erro
+                item["available_stock"] = 0 
 
     return carrinho
 
-# Rota POST para adicionar um produto ao carrinho
 @app.post("/carrinho", response_model=Carrinho)
 async def adicionar_ao_carrinho(novo_item: Carrinho):
     carrinho = ler_carrinho()
@@ -277,7 +257,6 @@ async def adicionar_ao_carrinho(novo_item: Carrinho):
     salvar_carrinho(carrinho)
     return carrinho[-1]
 
-# Rota PATCH para atualizar a quantidade de um produto no carrinho
 @app.patch("/carrinho/{client_id}/{product_id}/{quantity}", response_model=Carrinho)
 async def atualizar_quantity(client_id: int, product_id: int, quantity: int):
     carrinho = ler_carrinho()
@@ -287,14 +266,12 @@ async def atualizar_quantity(client_id: int, product_id: int, quantity: int):
             if quantity <= 0:
                 raise HTTPException(status_code=400, detail="Quantidade deve ser maior que zero.")
                         
-            # Atualiza a quantidade para a nova quantidade fornecida
             item["quantity"] = quantity
             salvar_carrinho(carrinho)
             return item
     
     raise HTTPException(status_code=404, detail="Produto não encontrado no carrinho.")
 
-# Rota DELETE para remover um produto do carrinho
 @app.delete("/carrinho/{client_id}/{product_id}")
 async def remover_product(client_id: int, product_id: int):
     carrinho = ler_carrinho()
@@ -318,14 +295,13 @@ async def criar_pedido(pedido: Pedido):
 
     novo_id = len(pedidos) + 1
 
-    # Criar o pedido com o ID gerado
     pedido_criado = Pedido(
         id=novo_id,
         client_id=pedido.client_id,
         product_id=pedido.product_id,
         product_name=pedido.product_name,
         quantity=pedido.quantity,
-        status="pendente"  # Status inicial
+        status="pendente"
     )
 
     pedidos.append(pedido_criado.dict())
@@ -359,7 +335,6 @@ async def listar_pedidos():
 
 ###################################################################
 
-# Função de inicialização para consumir eventos
 @app.on_event("startup")
 async def iniciar_consumo_de_eventos():
     import threading

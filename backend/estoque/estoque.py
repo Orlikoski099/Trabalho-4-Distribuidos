@@ -1,6 +1,6 @@
 import json
 import threading
-import pika
+import pika # type: ignore
 from fastapi import FastAPI, HTTPException
 
 app = FastAPI()
@@ -47,7 +47,6 @@ def carregar_estoque_por_id(product_id: int):
                     detail="Formato inválido: O estoque deve ser uma lista"
                 )
             
-            # Busca o produto pelo ID
             produto = next((item for item in estoque if item.get("id") == product_id), None)
             
             if produto is None:
@@ -78,10 +77,8 @@ def enviar_evento(evento, queue):
     channel = connection.channel()
     channel.exchange_declare(exchange='default', exchange_type='topic')
 
-    # Garante que a fila existe
     channel.queue_declare(queue=queue)
 
-    # Publica o evento na fila
     channel.basic_publish(
         exchange='',
         routing_key=queue,
@@ -91,7 +88,6 @@ def enviar_evento(evento, queue):
     print(f"Evento enviado para a fila {queue}: {evento}")
     connection.close()
 
-# Callback para processar eventos de criação de pedidos
 def callback_pedido_criado(ch, method, properties, body):
     try:
         pedido = json.loads(body)
@@ -120,7 +116,6 @@ def callback_pedido_criado(ch, method, properties, body):
     except Exception as e:
         print(f"Erro no callback: {str(e)}")
 
-# Callback para processar eventos de exclusão de pedidos
 def callback_pedido_excluido(ch, method, properties, body):
     try:
         pedido = json.loads(body)
@@ -148,7 +143,6 @@ def callback_pedido_excluido(ch, method, properties, body):
     except Exception as e:
         print(f"Erro no callback: {str(e)}")
         
-# Função para iniciar o consumidor de eventos
 def consumir_eventos():
     connection = pika.BlockingConnection(pika.ConnectionParameters(
         host=RABBITMQ_HOST, credentials=CREDENTIALS))
@@ -176,20 +170,17 @@ def consumir_eventos():
 
 ###################################################################
 
-# Endpoint para consultar o estoque
 @app.get("/estoque")
 async def consultar_estoque():
     estoque = carregar_estoque()
     return estoque
 
-# Endpoint para consultar o estoque de um produto X
 @app.get("/estoque/{product_id}")
 async def get_product_stock(product_id: int):
     product = carregar_estoque_por_id(product_id)
     print(product)
     return product["stock"]
     
-
 @app.on_event("startup")
 def start_rabbitmq_consumer():
     threading.Thread(target=consumir_eventos, daemon=True).start()

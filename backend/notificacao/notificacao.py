@@ -11,10 +11,10 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Permite qualquer origem (CUIDADO EM PRODUÇÃO)
+    allow_origins=["*"], 
     allow_credentials=True,
-    allow_methods=["*"],  # Permite todos os métodos HTTP
-    allow_headers=["*"],  # Permite todos os cabeçalhos
+    allow_methods=["*"], 
+    allow_headers=["*"], 
 )
 
 TOPIC_PEDIDOS_CRIADOS = 'pedidos.criados'
@@ -23,13 +23,11 @@ TOPIC_PEDIDOS_ENVIADOS = 'pedidos.enviados'
 TOPIC_PAGAMENTOS_APROVADOS = 'pagamentos.aprovados'
 TOPIC_PAGAMENTOS_RECUSADOS = 'pagamentos.recusados'
 
-# Configurações do RabbitMQ
 RABBITMQ_HOST = 'rabbitmq'
 RABBITMQ_USER = "admin"
 RABBITMQ_PASSWORD = "admin"
 CREDENTIALS = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASSWORD)
 
-# Filas que serão escutadas
 FILAS = {
     "Pedidos_Criados": TOPIC_PEDIDOS_CRIADOS,
     "Pedidos_Excluídos": TOPIC_PEDIDOS_EXCLUIDOS,
@@ -38,10 +36,10 @@ FILAS = {
     "Pagamentos_Recusados": TOPIC_PAGAMENTOS_RECUSADOS
 }
 
-# Fila de mensagens para SSE
 notificacao_queue = queue.Queue()
 
-# Função para notificar eventos
+###################################################################
+
 def notificar_evento(evento, routing_key):
     try:
         print(f"Notificação recebida na chave '{routing_key}': {evento}")
@@ -54,7 +52,6 @@ def notificar_evento(evento, routing_key):
     except Exception as e:
         print(f"Erro ao processar a notificação: {str(e)}")
 
-# Callback genérico para processar mensagens de qualquer fila
 def callback(ch, method, properties, body):
     try:
         mensagem = json.loads(body)
@@ -65,16 +62,13 @@ def callback(ch, method, properties, body):
     except Exception as e:
         print(f"Erro ao processar mensagem: {str(e)}")
 
-# Consumidor para todas as filas
 def consumir_filas():
     try:
-        # Conexão com RabbitMQ
         connection = pika.BlockingConnection(pika.ConnectionParameters(
             host=RABBITMQ_HOST, credentials=CREDENTIALS))
         channel = connection.channel()
         channel.exchange_declare(exchange='default', exchange_type='topic')
 
-        # Vincular filas e consumir mensagens
         for fila, routing_key in FILAS.items():
             result = channel.queue_declare(queue='', exclusive=True)
             fila_temporaria = result.method.queue
@@ -106,17 +100,17 @@ async def sse_notificacoes():
             print(f"Erro no SSE: {str(e)}")
             break
 
+###################################################################
+
 # Endpoint SSE para enviar notificações ao cliente
 @app.get("/notificacoes")
 async def notificacoes_sse():
     return StreamingResponse(sse_notificacoes(), media_type="text/event-stream")
 
-# Endpoint raiz para verificar se o serviço está rodando
 @app.get("/")
 def root():
     return {"message": "Serviço de Notificação com SSE está rodando"}
 
-# Evento de inicialização para iniciar o consumidor em uma thread separada
 @app.on_event("startup")
 def start_rabbitmq_consumer():
     threading.Thread(target=consumir_filas, daemon=True).start()
