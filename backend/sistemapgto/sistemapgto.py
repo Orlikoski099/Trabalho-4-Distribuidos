@@ -16,7 +16,7 @@ class Pagamento(BaseModel):
 @app.post("/webhook/pagamento")
 async def webhook_pagamento(pagamento: Pagamento):
     status = "aprovado" if random.choice([True, False]) else "recusado"
-    
+
     resposta = {
         "transacao_id": pagamento.transacao_id,
         "client_id": pagamento.client_id,

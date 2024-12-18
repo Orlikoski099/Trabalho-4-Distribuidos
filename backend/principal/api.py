@@ -327,7 +327,6 @@ async def criar_pedido(pedido: Pedido):
 
     return pedido_criado
 
-# Rota GET para obter todos os pedidos
 @app.get("/pedidos", response_model=List[Pedido])
 async def listar_pedidos():
     pedidos = ler_pedidos()
