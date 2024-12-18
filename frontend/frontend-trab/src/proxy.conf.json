@@ -4,6 +4,11 @@
     "secure": false,
     "changeOrigin": true
   },
+  "/carrinho": {
+    "target": "http://localhost:8000",
+    "secure": false,
+    "changeOrigin": true
+  },
   "/notificacoes": {
     "target": "http://localhost:8004",
     "secure": false,

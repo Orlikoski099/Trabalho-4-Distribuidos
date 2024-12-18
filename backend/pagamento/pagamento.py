@@ -45,52 +45,70 @@ def enviar_evento(evento, routing_key):
         f"Evento enviado para a exchange 'default' com chave {routing_key}: {evento}")
     connection.close()
 
-
-
 def callback(ch, method, properties, body):
     try:
         # Decodifica os dados do pedido
         pedido = json.loads(body)
         print(f"Pedido recebido para processamento: {pedido}")
-        
+
+        # Valida o formato do pedido recebido
+        if not all(key in pedido for key in ["id", "client_id", "product_id", "product_name", "quantity", "status"]):
+            print("Erro: Formato de pedido inválido.")
+            return
+
         # Monta os dados para o sistema de pagamento
         dados_pagamento = {
-            "transacao_id": f"pgto_{pedido['produto']}_{pedido['cliente_id']}",
-            "cliente_id": pedido["cliente_id"],
-            "produto": pedido["produto"],
-            "quantidade": pedido["quantidade"],
+            "transacao_id": f"pgto_{pedido['id']}",
+            "client_id": pedido["client_id"],
+            "product_id": pedido["product_id"],
+            "product_name": pedido["product_name"],
+            "quantity": pedido["quantity"],
         }
 
-        print(dados_pagamento)
-        
+        print(f"Enviando dados para o sistema de pagamento: {dados_pagamento}")
+
         # Envia a requisição para o webhook do sistema de pagamento
         response = requests.post(WEBHOOK_URL, json=dados_pagamento)
-        
+
         if response.status_code == 200:
             resposta_pagamento = response.json()
             print(f"Resposta do sistema de pagamento: {resposta_pagamento}")
-            
-            # Verifica o status do pagamento retornado pelo webhook
-            if resposta_pagamento["status"] == "aprovado":
-                pagamento_aprovado = {
-                    "cliente_id": pedido["cliente_id"],
-                    "produto": pedido["produto"],
-                    "quantidade": pedido["quantidade"],
-                    "status": "Aprovado",
-                    "id": resposta_pagamento["transacao_id"]
+
+            # Atualiza o status do pedido baseado no retorno do sistema de pagamento
+            if resposta_pagamento.get("status") == "aprovado":
+                pedido_atualizado = {
+                    "id": pedido["id"],
+                    "client_id": pedido["client_id"],
+                    "product_id": pedido["product_id"],
+                    "product_name": pedido["product_name"],
+                    "quantity": pedido["quantity"],
+                    "status": "aprovado",
                 }
-                enviar_evento(pagamento_aprovado, TOPIC_PAGAMENTOS_APROVADOS)
+                enviar_evento(pedido_atualizado, TOPIC_PAGAMENTOS_APROVADOS)
+                print(f"Pagamento aprovado. Pedido enviado para a fila: {TOPIC_PAGAMENTOS_APROVADOS}")
             else:
-                pagamento_recusado = {
-                    "cliente_id": pedido["cliente_id"],
-                    "produto": pedido["produto"],
-                    "quantidade": pedido["quantidade"],
-                    "status": "Recusado",
-                    "id": resposta_pagamento["transacao_id"]
+                pedido_atualizado = {
+                    "id": pedido["id"],
+                    "client_id": pedido["client_id"],
+                    "product_id": pedido["product_id"],
+                    "product_name": pedido["product_name"],
+                    "quantity": pedido["quantity"],
+                    "status": "recusado",
                 }
-                enviar_evento(pagamento_recusado, TOPIC_PAGAMENTOS_RECUSADOS)
+                enviar_evento(pedido_atualizado, TOPIC_PAGAMENTOS_RECUSADOS)
+                print(f"Pagamento recusado. Pedido enviado para a fila: {TOPIC_PAGAMENTOS_RECUSADOS}")
         else:
-            print(f"Erro ao conectar com o webhook. Código {response.status_code}")
+            print(f"Erro ao conectar com o webhook do sistema de pagamento. Código {response.status_code}")
+            pedido_erro = {
+                "id": pedido["id"],
+                "client_id": pedido["client_id"],
+                "product_id": pedido["product_id"],
+                "product_name": pedido["product_name"],
+                "quantity": pedido["quantity"],
+                "status": "erro_pagamento",
+            }
+            enviar_evento(pedido_erro, TOPIC_PAGAMENTOS_RECUSADOS)
+            print(f"Erro no pagamento. Pedido enviado para a fila: {TOPIC_PAGAMENTOS_RECUSADOS}")
 
     except json.JSONDecodeError:
         print("Erro ao decodificar a mensagem recebida.")

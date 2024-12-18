@@ -40,12 +40,12 @@
         <tbody>
           <tr *ngFor="let prod of products">
             <td>{{ prod.name }}</td>
-            <td>{{ prod.inStock }}</td>
+            <td>{{ prod.stock }}</td>
             <td>
               <input
                 type="number"
                 [(ngModel)]="prod.quantity"
-                (input)="prod.inStock = prod.originalStock - prod.quantity"
+                (input)="prod.stock = prod.originalStock - prod.quantity"
                 [max]="prod.originalStock"
                 min="0"
               />
@@ -72,7 +72,7 @@
         </thead>
         <tbody>
           <tr *ngFor="let item of cart">
-            <td>{{ item.name }}</td>
+            <td>{{ item.product_name }}</td>
             <td>{{ item.quantity }}</td>
             <td>
               <input type="number" [(ngModel)]="item.updatedQuantity" />
@@ -85,8 +85,8 @@
                 {{ item.updatedQuantity ? "Atualizar" : "Remover" }}
               </button>
               <button
-                (click)="payItem(item, item.id)"
-                [disabled]="item.originalStock < item.quantity"
+                (click)="payItem(item, item.product_id)"
+                [disabled]="item.available_stock < item.quantity"
               >
                 Pagar
               </button>
@@ -114,8 +114,8 @@
         <tbody>
           <tr *ngFor="let item of orders">
             <td>{{ item.id }}</td>
-            <td>{{ item.produto }}</td>
-            <td>{{ item.quantidade }}</td>
+            <td>{{ item.product_name }}</td>
+            <td>{{ item.quantity }}</td>
             <td>{{ item.status }}</td>
           </tr>
         </tbody>
@@ -138,8 +138,8 @@
         </thead>
         <tbody>
           <tr *ngFor="let item of notificacoes">
-            <td>{{ item.dados.produto }}</td>
-            <td>{{ item.dados.quantidade }}</td>
+            <td>{{ item.dados.product_name }}</td>
+            <td>{{ item.dados.quantity }}</td>
             <td>{{ item.dados.status }}</td>
           </tr>
         </tbody>

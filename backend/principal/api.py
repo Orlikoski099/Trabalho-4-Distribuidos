@@ -28,7 +28,6 @@ TOPIC_PEDIDOS_ENVIADOS = 'pedidos.enviados'
 TOPIC_PAGAMENTOS_APROVADOS = 'pagamentos.aprovados'
 TOPIC_PAGAMENTOS_RECUSADOS = 'pagamentos.recusados'
 
-
 ESTOQUE_SERVICE_URL = 'http://estoque:8000'
 NOTIFICACAO_SERVICE_URL = 'http://notificacao:8000'
 ENTREGA_SERVICE_URL = 'http://entrega:8000'
@@ -37,22 +36,30 @@ PAGAMENTO_SERVICE_URL = 'http://pagamento:8000'
 CARRINHO_FILE_PATH = "carrinho.json"
 PEDIDOS_FILE_PATH = 'pedidos.json'
 
-# Modelo de produto com base na interface Products
+# Modelo do Produto
 class Produto(BaseModel):
     id: int
     name: str
-    originalStock: int
-    inStock: int
+    stock: int
+
+# Modelo do Carrinho
+class Carrinho(BaseModel):
+    client_id: int
+    product_name: str
+    product_id: int
+    available_stock: Optional[int] = None  
     quantity: int
 
 # Modelo de Pedido
 class Pedido(BaseModel):
     id: Optional[int]
-    cliente_id: int
-    produto: str
-    quantidade: int
+    client_id: int
+    product_id: int
+    product_name: str
+    quantity: int
     status: Optional[str]  # 'pendente', 'aprovado', 'recusado'
 
+###################################################################
 
 def enviar_evento(evento: dict, routing_key: str):
     connection = pika.BlockingConnection(pika.ConnectionParameters(host=RABBITMQ_HOST, credentials=CREDENTIALS))
@@ -66,42 +73,61 @@ def enviar_evento(evento: dict, routing_key: str):
 
 def consumir_eventos():
     try:
-        connection = pika.BlockingConnection(pika.ConnectionParameters(host=RABBITMQ_HOST))
+        connection = pika.BlockingConnection(pika.ConnectionParameters(host=RABBITMQ_HOST, credentials=CREDENTIALS))
         channel = connection.channel()
 
+        # Declarar o exchange
         channel.exchange_declare(exchange='default', exchange_type='topic')
-        
-        result_1 = channel.queue_declare(queue='', exclusive=True)
-        result_2 = channel.queue_declare(queue='', exclusive=True)
-        result_3 = channel.queue_declare(queue='', exclusive=True)
 
-        selected_1 = result_1.method.queue
-        selected_2 = result_2.method.queue
-        selected_3 = result_3.method.queue
+        # Criar as filas exclusivas para escutar os tópicos
+        result_pagamentos_aprovados = channel.queue_declare(queue='', exclusive=True)
+        result_pagamentos_recusados = channel.queue_declare(queue='', exclusive=True)
+        result_pedidos_enviados = channel.queue_declare(queue='', exclusive=True)
 
-        channel.queue_bind(exchange='default', queue=selected_1, routing_key=TOPIC_PAGAMENTOS_APROVADOS)
-        channel.queue_bind(exchange='default', queue=selected_2, routing_key=TOPIC_PAGAMENTOS_RECUSADOS)
-        channel.queue_bind(exchange='default', queue=selected_3, routing_key=TOPIC_PEDIDOS_ENVIADOS)
+        # Obter os nomes das filas criadas
+        fila_pagamentos_aprovados = result_pagamentos_aprovados.method.queue
+        fila_pagamentos_recusados = result_pagamentos_recusados.method.queue
+        fila_pedidos_enviados = result_pedidos_enviados.method.queue
 
+        # Vincular as filas aos tópicos específicos
+        channel.queue_bind(exchange='default', queue=fila_pagamentos_aprovados, routing_key=TOPIC_PAGAMENTOS_APROVADOS)
+        channel.queue_bind(exchange='default', queue=fila_pagamentos_recusados, routing_key=TOPIC_PAGAMENTOS_RECUSADOS)
+        channel.queue_bind(exchange='default', queue=fila_pedidos_enviados, routing_key=TOPIC_PEDIDOS_ENVIADOS)
+
+        # Função para processar eventos recebidos
         def callback(ch, method, properties, body):
-            evento = json.loads(body)
-            if method.routing_key == TOPIC_PAGAMENTOS_APROVADOS:
-                print(f"Pagamento aprovado para pedido {evento['pedido_id']}")
-            elif method.routing_key == TOPIC_PAGAMENTOS_RECUSADOS:
-                print(f"Pagamento recusado para pedido {evento['pedido_id']}")
-            elif method.routing_key == TOPIC_PEDIDOS_ENVIADOS:
-                print(f"Pedido {evento['pedido_id']} enviado")
-            
-            ch.basic_ack(delivery_tag=method.delivery_tag)
+            try:
+                evento = json.loads(body)
+                print(f"Evento recebido na fila '{method.routing_key}': {evento}")
 
-        channel.basic_consume(
-            queue=selected_1, on_message_callback=callback, auto_ack=True)
-        
-        channel.basic_consume(
-            queue=selected_2, on_message_callback=callback, auto_ack=True)
-        
-        channel.basic_consume(
-            queue=selected_3, on_message_callback=callback, auto_ack=True)
+                # Atualizar o status do pedido conforme o tópico
+                if method.routing_key == TOPIC_PAGAMENTOS_APROVADOS:
+                    print(f"Atualizando status do pedido {evento['id']} para 'aprovado'")
+                    evento["status"] = "aprovado"
+                    atualizar_pedido(evento)
+
+                elif method.routing_key == TOPIC_PAGAMENTOS_RECUSADOS:
+                    print(f"Atualizando status do pedido {evento['id']} para 'recusado'")
+                    evento["status"] = "recusado"
+                    atualizar_pedido(evento)
+
+                elif method.routing_key == TOPIC_PEDIDOS_ENVIADOS:
+                    print(f"Atualizando status do pedido {evento['id']} para 'enviado'")
+                    evento["status"] = "enviado"
+                    atualizar_pedido(evento)
+
+                # Confirmar recebimento da mensagem
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+
+            except json.JSONDecodeError:
+                print("Erro ao decodificar o evento recebido.")
+            except Exception as e:
+                print(f"Erro ao processar evento: {e}")
+
+        # Consumir mensagens das filas com callbacks específicos
+        channel.basic_consume(queue=fila_pagamentos_aprovados, on_message_callback=callback)
+        channel.basic_consume(queue=fila_pagamentos_recusados, on_message_callback=callback)
+        channel.basic_consume(queue=fila_pedidos_enviados, on_message_callback=callback)
 
         print("Esperando por eventos. Pressione Ctrl+C para sair.")
         channel.start_consuming()
@@ -160,6 +186,33 @@ def salvar_pedidos(pedidos: List[dict]):
     except Exception as e:
         print(f"Erro ao salvar os pedidos no arquivo {PEDIDOS_FILE_PATH}: {e}") 
 
+def atualizar_pedido(evento: dict):
+    try:
+        # Carrega os pedidos do arquivo
+        pedidos = ler_pedidos()
+
+        # Procura o pedido que corresponde ao ID do evento
+        pedido_encontrado = False
+        for pedido in pedidos:
+            if pedido["id"] == evento["id"]:
+                # Atualiza o status do pedido
+                pedido["status"] = evento["status"]
+                pedido_encontrado = True
+                print(f"Pedido {evento['id']} atualizado para status '{evento['status']}'.")
+
+        # Se o pedido não for encontrado, adiciona um novo
+        if not pedido_encontrado:
+            pedidos.append(evento)
+            print(f"Novo pedido {evento['id']} adicionado com status '{evento['status']}'.")
+
+        # Salva os pedidos de volta no arquivo
+        salvar_pedidos(pedidos)
+
+    except Exception as e:
+        print(f"Erro ao atualizar pedido: {e}")
+    
+###################################################################
+
 @app.get("/")
 async def root():
     return {"message": "CORS configurado para localhost"}
@@ -167,7 +220,7 @@ async def root():
 ###################################################################
 
 @app.get("/produtos")
-async def listar_produtos():
+async def listar_products():
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(f'{ESTOQUE_SERVICE_URL}/estoque')
@@ -175,7 +228,7 @@ async def listar_produtos():
         if response.status_code == 200:
             return response.json()
         else:
-            raise HTTPException(status_code=response.status_code, detail="Erro ao obter produtos do estoque")
+            raise HTTPException(status_code=response.status_code, detail="Erro ao obter products do estoque")
     
     except httpx.RequestError as e:
         raise HTTPException(status_code=500, detail=f"Erro de conexão com o serviço de estoque: {str(e)}")
@@ -183,81 +236,96 @@ async def listar_produtos():
 ###################################################################
 
 # Rota GET para obter todos os produtos do carrinho
-@app.get("/carrinho", response_model=List[Produto])
+@app.get("/carrinho", response_model=List[Carrinho])
 async def listar_carrinho():
     carrinho = ler_carrinho()
+
+    # Atualizar o available_stock de cada item no carrinho
+    async with httpx.AsyncClient() as client:
+        for item in carrinho:
+            try:
+                # Consultar o estoque para o produto atual
+                response = await client.get(f"{ESTOQUE_SERVICE_URL}/estoque/{item['product_id']}")
+                response.raise_for_status()
+                estoque_data = response.json()
+                
+                # Atualizar o campo available_stock no item
+                item["available_stock"] = estoque_data
+            except httpx.HTTPStatusError as e:
+                print(f"Erro ao buscar estoque para o produto {item['product_id']}: {e}")
+                item["available_stock"] = 0  # Define como 0 caso ocorra erro
+
     return carrinho
 
-@app.post("/carrinho", response_model=Produto)
-async def adicionar_ao_carrinho(produto: Produto):
+# Rota POST para adicionar um produto ao carrinho
+@app.post("/carrinho", response_model=Carrinho)
+async def adicionar_ao_carrinho(novo_item: Carrinho):
     carrinho = ler_carrinho()
 
     for item in carrinho:
-        if item["id"] == produto.id:
-            item["quantity"]
-            item["inStock"]
+        if item["product_id"] == novo_item.product_id and item["client_id"] == novo_item.client_id:
+            item["quantity"] += novo_item.quantity
             salvar_carrinho(carrinho)
             return item
     
     carrinho.append({
-        "id": produto.id,
-        "name": produto.name,
-        "originalStock": produto.originalStock,
-        "inStock": produto.originalStock - produto.quantity,  # Subtrai do estoque
-        "quantity": produto.quantity
+        "client_id": novo_item.client_id,
+        "product_name": novo_item.product_name,
+        "product_id": novo_item.product_id,
+        "quantity": novo_item.quantity,
     })
     salvar_carrinho(carrinho)
     return carrinho[-1]
 
 # Rota PATCH para atualizar a quantidade de um produto no carrinho
-@app.patch("/carrinho/{produto_id}/{quantity}", response_model=Produto)
-async def atualizar_quantidade(produto_id: int, quantity: int):
+@app.patch("/carrinho/{client_id}/{product_id}/{quantity}", response_model=Carrinho)
+async def atualizar_quantity(client_id: int, product_id: int, quantity: int):
     carrinho = ler_carrinho()
     
     for item in carrinho:
-        if item["id"] == produto_id:
+        if item["client_id"] == client_id and item["product_id"] == product_id:
             if quantity <= 0:
                 raise HTTPException(status_code=400, detail="Quantidade deve ser maior que zero.")
+                        
+            # Atualiza a quantidade para a nova quantidade fornecida
             item["quantity"] = quantity
-            item["inStock"] = item["originalStock"] - item["quantity"]  # Atualiza o estoque disponível
             salvar_carrinho(carrinho)
             return item
     
     raise HTTPException(status_code=404, detail="Produto não encontrado no carrinho.")
 
 # Rota DELETE para remover um produto do carrinho
-@app.delete("/carrinho/{produto_id}")
-async def remover_produto(produto_id: int):
+@app.delete("/carrinho/{client_id}/{product_id}")
+async def remover_product(client_id: int, product_id: int):
     carrinho = ler_carrinho()
     
-    carrinho = [item for item in carrinho if item["id"] != produto_id]
+    novo_carrinho = [item for item in carrinho if not (item["client_id"] == client_id and item["product_id"] == product_id)]
     
-    if len(carrinho) == len(ler_carrinho()):
+    if len(novo_carrinho) == len(carrinho):
         raise HTTPException(status_code=404, detail="Produto não encontrado no carrinho.")
     
-    salvar_carrinho(carrinho)
-    return {"mensagem": f"Produto {produto_id} removido do carrinho."}
+    salvar_carrinho(novo_carrinho)
+    return {"mensagem": f"Produto {product_id} removido do carrinho do cliente {client_id}."}
 
 ###################################################################
 
-# Rota para criar um pedido
 @app.post("/pedidos", response_model=Pedido)
 async def criar_pedido(pedido: Pedido):
-    if pedido.quantidade <= 0:
+    if pedido.quantity <= 0:
         raise HTTPException(status_code=400, detail="A quantidade do produto deve ser maior que zero.")
     
     pedidos = ler_pedidos()
 
-    # Gerar um ID único para o pedido (baseado na quantidade de pedidos existentes)
     novo_id = len(pedidos) + 1
 
     # Criar o pedido com o ID gerado
     pedido_criado = Pedido(
         id=novo_id,
-        cliente_id=pedido.cliente_id,
-        produto=pedido.produto,
-        quantidade=pedido.quantidade,
-        status="pendente"  # Definindo status inicial como "pendente"
+        client_id=pedido.client_id,
+        product_id=pedido.product_id,
+        product_name=pedido.product_name,
+        quantity=pedido.quantity,
+        status="pendente"  # Status inicial
     )
 
     pedidos.append(pedido_criado.dict())
@@ -265,36 +333,31 @@ async def criar_pedido(pedido: Pedido):
     salvar_pedidos(pedidos)
 
     evento_pedido = {
-        "cliente_id": pedido.cliente_id,
-        "produto": pedido.produto,
-        "quantidade": pedido.quantidade,
-        "status": 'Criado'
+        "id": pedido_criado.id,
+        "client_id": pedido_criado.client_id,
+        "product_id": pedido_criado.product_id,
+        "product_name": pedido_criado.product_name,
+        "quantity": pedido_criado.quantity,
+        "status": "criado"
     }
     enviar_evento(evento_pedido, TOPIC_PEDIDOS_CRIADOS)
     
-    #Acordando o microserviço de notificações
+    # Acordar os microserviços relacionados
+    urls = [NOTIFICACAO_SERVICE_URL, PAGAMENTO_SERVICE_URL, ENTREGA_SERVICE_URL]
     async with httpx.AsyncClient() as client:
-        response = await client.get(f'{NOTIFICACAO_SERVICE_URL}/')
-        print(response)
-
-    #Acordando o microserviço de pagamentos
-    async with httpx.AsyncClient() as client:
-        response = await client.get(f'{PAGAMENTO_SERVICE_URL}/')
-        print(response)
-
-        #Acordando o microserviço de entrega
-    async with httpx.AsyncClient() as client:
-        response = await client.get(f'{ENTREGA_SERVICE_URL}/')
-        print(response)
+        for url in urls:
+            response = await client.get(f'{url}/')
+            print(response)
 
     return pedido_criado
 
-
 # Rota GET para obter todos os pedidos
 @app.get("/pedidos", response_model=List[Pedido])
-async def listar_carrinho():
+async def listar_pedidos():
     pedidos = ler_pedidos()
     return pedidos
+
+###################################################################
 
 # Função de inicialização para consumir eventos
 @app.on_event("startup")

@@ -2,7 +2,6 @@ import json
 import threading
 import pika
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
 
 app = FastAPI()
 
@@ -17,7 +16,7 @@ TOPIC_PEDIDOS_ENVIADOS = 'pedidos.enviados'
 TOPIC_PAGAMENTOS_APROVADOS = 'pagamentos.aprovados'
 TOPIC_PAGAMENTOS_RECUSADOS = 'pagamentos.recusados'
 
-# Função para carregar o estoque do arquivo JSON
+###################################################################
 
 def carregar_estoque():
     try:
@@ -34,22 +33,44 @@ def carregar_estoque():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
 
-# Função para salvar as alterações no estoque no arquivo JSON
-
+def carregar_estoque_por_id(product_id: int):
+    try:
+        with open("estoque.json", "r") as file:
+            content = file.read().strip()
+            if not content:
+                raise HTTPException(status_code=204, detail="No content")
+            
+            estoque = json.loads(content)
+            if not isinstance(estoque, list):
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Formato inválido: O estoque deve ser uma lista"
+                )
+            
+            # Busca o produto pelo ID
+            produto = next((item for item in estoque if item.get("id") == product_id), None)
+            
+            if produto is None:
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"Produto com ID {product_id} não encontrado"
+                )
+            
+            return produto
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Arquivo não encontrado")
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=400, detail="Erro ao decodificar o JSON"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
 
 def salvar_estoque(estoque):
     with open("estoque.json", "w") as file:
         json.dump(estoque, file, indent=4)
 
-# Modelo de dados para representar um pedido
-
-
-class Pedido(BaseModel):
-    produto: int
-    quantidade: int
-
-# Função para enviar um evento para o RabbitMQ
-
+###################################################################
 
 def enviar_evento(evento, queue):
     connection = pika.BlockingConnection(pika.ConnectionParameters(
@@ -73,56 +94,55 @@ def enviar_evento(evento, queue):
 # Callback para processar eventos de criação de pedidos
 def callback_pedido_criado(ch, method, properties, body):
     try:
-        # Decodifica o corpo da mensagem recebida
         pedido = json.loads(body)
         print(f"Pedido criado recebido: {pedido}")
 
-        # Carrega o estoque (já é uma lista no seu caso)
-        estoque = carregar_estoque()
-
-        # Busca o produto correspondente ao ID do pedido
-        produto = next((p for p in estoque if p['name'] == pedido['produto']), None)
-
-        if not produto:
-            print("Erro: Produto não encontrado no estoque.")
+        if not all(key in pedido for key in ["id", "client_id", "product_id", "product_name", "quantity", "status"]):
+            print("Erro: Formato de pedido inválido.")
             return
 
-        # Verifica se há quantidade suficiente no estoque
-        if produto['inStock'] >= pedido['quantidade']:
-            # Atualiza o estoque
-            produto['inStock'] -= pedido['quantidade']
+        estoque = carregar_estoque()
+
+        product = next((p for p in estoque if p['id'] == pedido['product_id']), None)
+
+        if not product:
+            print(f"Erro: Produto com ID {pedido['product_id']} não encontrado no estoque.")
+            return
+
+        if product['stock'] >= pedido['quantity']:
+            product['stock'] -= pedido['quantity']
             salvar_estoque(estoque)
-            print(f"Estoque atualizado após pedido criado: {produto}")
+            print(f"Estoque atualizado após pedido criado: {product}")
         else:
-            print("Erro: Quantidade insuficiente no estoque.")
+            print(f"Erro: Estoque insuficiente para o produto '{product['name']}' (ID: {product['id']}).")
     except json.JSONDecodeError:
         print("Erro ao decodificar a mensagem recebida.")
     except Exception as e:
         print(f"Erro no callback: {str(e)}")
 
-
 # Callback para processar eventos de exclusão de pedidos
 def callback_pedido_excluido(ch, method, properties, body):
     try:
-        # Decodifica o corpo da mensagem recebida
         pedido = json.loads(body)
-        print(f"Pedido excluído recebido: {pedido}")
+        print(f"Pedido criado recebido: {pedido}")
 
-        # Carrega o estoque (lista de produtos)
-        estoque = carregar_estoque()
-
-        # Busca o produto correspondente ao ID do pedido
-        produto = next((p for p in estoque if p['produto'] == pedido['produto']), None)
-
-        if not produto:
-            print("Erro: Produto não encontrado no estoque.")
+        if not all(key in pedido for key in ["id", "client_id", "product_id", "product_name", "quantity", "status"]):
+            print("Erro: Formato de pedido inválido.")
             return
 
-        # Atualiza o estoque (revertendo a quantidade do pedido excluído)
-        produto['inStock'] += pedido['quantidade']
-        salvar_estoque(estoque)
+        estoque = carregar_estoque()
 
-        print(f"Estoque atualizado após pedido excluído: {produto}")
+        product = next((p for p in estoque if p['id'] == pedido['product_id']), None)
+
+        if product:
+            product['stock'] += pedido['quantity']
+            salvar_estoque(estoque)
+            print(f"Estoque atualizado após pedido criado: {product}")
+            return
+        else:
+            print(f"Erro: Produto com ID {pedido['product_id']} não encontrado no estoque.")
+            return
+        
     except json.JSONDecodeError:
         print("Erro ao decodificar a mensagem recebida.")
     except Exception as e:
@@ -154,58 +174,21 @@ def consumir_eventos():
     print('Aguardando mensagens nas filas. Para sair, pressione CTRL+C.')
     channel.start_consuming()
 
-# Endpoint para criar um pedido
-
-
-@app.post("/pedido/criar")
-async def criar_pedido(pedido: Pedido):
-    estoque = carregar_estoque()
-    produto = next(
-        (p for p in estoque['produtos'] if p['id'] == pedido.produto), None)
-
-    if not produto:
-        raise HTTPException(status_code=404, detail="Produto não encontrado.")
-
-    if produto['quantidade'] < pedido.quantidade:
-        raise HTTPException(
-            status_code=400, detail="Quantidade insuficiente no estoque.")
-
-    produto['quantidade'] -= pedido.quantidade
-    salvar_estoque(estoque)
-
-    enviar_evento(pedido.dict(), TOPIC_PEDIDOS_CRIADOS)
-
-    return {"message": "Pedido criado com sucesso", "produto": produto}
-
-# Endpoint para excluir um pedido
-
-
-@app.post("/pedido/excluir")
-async def excluir_pedido(pedido: Pedido):
-    estoque = carregar_estoque()
-    produto = next(
-        (p for p in estoque['produtos'] if p['id'] == pedido.produto), None)
-
-    if not produto:
-        raise HTTPException(status_code=404, detail="Produto não encontrado.")
-
-    produto['quantidade'] += pedido.quantidade
-    salvar_estoque(estoque)
-
-    enviar_evento(pedido.dict(), TOPIC_PEDIDOS_EXCLUIDOS)
-
-    return {"message": "Pedido excluído com sucesso", "produto": produto}
-
 ###################################################################
 
 # Endpoint para consultar o estoque
-
-
 @app.get("/estoque")
 async def consultar_estoque():
     estoque = carregar_estoque()
     return estoque
 
+# Endpoint para consultar o estoque de um produto X
+@app.get("/estoque/{product_id}")
+async def get_product_stock(product_id: int):
+    product = carregar_estoque_por_id(product_id)
+    print(product)
+    return product["stock"]
+    
 
 @app.on_event("startup")
 def start_rabbitmq_consumer():

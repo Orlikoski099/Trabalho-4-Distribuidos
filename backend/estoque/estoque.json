@@ -2,16 +2,16 @@
   {
     "id": 1,
     "name": "Produto A",
-    "inStock": 100
+    "stock": 100
   },
   {
     "id": 2,
     "name": "Produto B",
-    "inStock": 50
+    "stock": 50
   },
   {
     "id": 3,
     "name": "Produto C",
-    "inStock": 30
+    "stock": 30
   }
 ]
